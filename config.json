@@ -1,0 +1,51 @@
+{
+  "system": {
+    "port": 18080,
+    "log_file": "./backend.log",
+    "switch_script": "./switch_to_systemui.sh"
+  },
+  "ui": {
+    "font_size": "medium"
+  },
+  "stitch": {
+    "engine": "builtin",
+    "script_path": "./stitch_demo.py",
+    "python_bin": "python3",
+    "script_timeout_sec": 180,
+    "work_dir": "./_stitch_work",
+    "input_dir": "./stitch_input",
+    "output_dir": "./stitch_output",
+    "input_url_prefix": "/stitch_input/",
+    "output_url_prefix": "/stitch_output/",
+    "max_image_bytes": 15728640,
+    "camera": {
+      "backend": "auto",
+      "capture_backend": "auto_raw",
+      "source": "/dev/video-camera0",
+      "pixel_format": "NV12",
+      "rotation": "ccw90",
+      "frame_width": 1920,
+      "frame_height": 1080,
+      "fps": 30,
+      "v4l2_buffer_count": 4,
+      "preview_max_dim": 960,
+      "preview_jpeg_quality": 70,
+      "preview_fps": 30,
+      "auto_interval_sec": 0.5,
+      "jpeg_quality": 88
+    }
+  },
+  "accel": {
+    "preprocess": "rga",
+    "geometry": "cpu",
+    "selector": "off"
+  },
+  "selector": {
+    "cpu_basic": {
+      "min_interval_sec": 0.5,
+      "blur_threshold": 60.0,
+      "diff_threshold": 3.0,
+      "diff_resize_width": 320
+    }
+  }
+}

@@ -1,0 +1,44 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Runtime logs
+backend.log
+kiosk.log
+kiosk.err
+
+# Runtime pid files
+.myui.pid
+.myui_kiosk.pid
+backend.pid
+kiosk.pid
+
+# Local tool marker
+.codex
+.agents/
+.tmp/
+
+# Local cleanup archive
+_archive/
+
+# Generated reports and exports
+outputs/
+
+# Runtime outputs
+_stitch_work/*
+!_stitch_work/.gitkeep
+stitch_input/*
+!stitch_input/.gitkeep
+stitch_output/*
+!stitch_output/.gitkeep
+
+# Generated stitch files in project root
+stitched_*.jpg
+stitched_*.png
+
+# Generated benchmark reports
+reports/*
+!reports/.gitkeep
+
+# Ad hoc local board-debug scripts
+tmp_board_*.sh

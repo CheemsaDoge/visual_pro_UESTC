@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=400, user-scalable=no, target-densitydpi=device-dpi" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>工作台</title>
+  <style>
+    :root {
+      --bg: #050507;
+      --card-bg: rgba(22, 22, 26, 0.7);
+      --accent-blue: #0a84ff;
+      --accent-green: #30d158;
+      --accent-orange: #ff9f0a;
+      --text-main: #ffffff;
+      --text-muted: #98989d;
+      --status-ok: #32d74b;
+      --status-err: #ff453a;
+      --radius: 24px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { 
+      margin: 0; padding: 0; width: 100%; height: 100%; 
+      background: var(--bg); color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      /* 增加背景渐变氛围光，消除死板的纯黑空洞感 */
+      background-image: 
+        radial-gradient(circle at 10% 0%, rgba(10, 132, 255, 0.15) 0%, transparent 40%),
+        radial-gradient(circle at 90% 100%, rgba(48, 209, 88, 0.1) 0%, transparent 40%);
+    }
+    .app-container {
+      display: flex; flex-direction: column; height: 100vh; padding: 20px 20px 24px;
+    }
+    .header-area {
+      display: flex; justify-content: space-between; align-items: center; padding: 10px 0 24px;
+    }
+    .main-title { font-size: 34px; font-weight: 800; margin: 0; letter-spacing: 1px; }
+    .status-group { display: flex; gap: 8px; align-items: center; background: rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 20px; }
+    .indicator { width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); }
+    .indicator.active { background: var(--status-ok); box-shadow: 0 0 10px var(--status-ok); }
+    .indicator.error { background: var(--status-err); box-shadow: 0 0 10px var(--status-err); }
+    
+    .nav-grid {
+      /* 充满剩余空间，卡片自动拉伸填满高度 */
+      flex: 1; display: flex; flex-direction: column; gap: 20px; padding-bottom: 24px;
+    }
+    .nav-row { display: flex; gap: 20px; flex: 1; }
+    
+    /* 移除灰色丑陋边框，采用毛玻璃+发光侧边条+高级阴影 */
+    .nav-card {
+      position: relative; flex: 1; display: flex; flex-direction: column; justify-content: center;
+      padding: 24px 24px 24px 32px; background: var(--card-bg); border-radius: var(--radius); text-decoration: none; color: inherit;
+      box-shadow: 0 16px 32px rgba(0,0,0,0.4); overflow: hidden; cursor: pointer;
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.03);
+    }
+    .nav-card:active { transform: scale(0.97); }
+    /* 左侧高亮发光条 */
+    .nav-card::before {
+      content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px;
+      background: var(--accent); box-shadow: 0 0 20px var(--accent);
+    }
+    .nav-card::after {
+      content: ""; position: absolute; right: -40px; bottom: -40px; width: 180px; height: 180px;
+      border-radius: 50%; background: radial-gradient(circle, var(--accent), transparent 70%); opacity: 0.15;
+    }
+    
+    .nav-card h3 { margin: 0; font-size: 28px; font-weight: 800; letter-spacing: 1px; }
+    .nav-card p { margin: 8px 0 0; font-size: 16px; color: var(--text-muted); font-weight: 500; }
+    .nav-card .icon-label {
+      position: absolute; top: 20px; right: 24px; font-size: 46px; opacity: 0.9; font-weight: 800;
+      font-style: italic; color: rgba(255,255,255,0.05);
+    }
+    .badge {
+      display: inline-block; padding: 6px 14px; border-radius: 12px; font-size: 14px; font-weight: 700;
+      background: rgba(255,255,255,0.1); margin-top: 16px; color: #fff; align-self: flex-start;
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+    
+    .system-info {
+      padding: 24px 12px 0; border-top: 1px solid rgba(255,255,255,0.1); display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    }
+    .info-item { display: flex; flex-direction: column; gap: 6px; }
+    .info-label { font-size: 13px; text-transform: uppercase; color: var(--text-muted); font-weight: 800; letter-spacing: 1px; }
+    .info-value { font-size: 16px; font-weight: 600; color: #eee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .card-stitch { --accent: var(--accent-blue); }
+    .card-camera { --accent: var(--accent-green); }
+    .card-wifi { --accent: var(--accent-orange); }
+    .card-sys { --accent: #a1a1a6; }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <header class="header-area">
+      <h1 class="main-title">STITCH</h1>
+      <div class="status-group">
+        <span id="chip-backend" style="font-size: 14px; color: var(--text-muted); font-weight: bold; margin-right: 4px;">后端</span>
+        <div id="ind-backend" class="indicator"></div>
+        <div id="ind-wifi" class="indicator"></div>
+      </div>
+    </header>
+
+    <main class="nav-grid">
+      <a href="stitch.html?mode=image" class="nav-card card-stitch">
+        <span class="icon-label">01</span>
+        <h3>图片拼接</h3>
+        <p>选择并合成本地图像</p>
+        <span class="badge" id="stat-input-count">源图: --</span>
+      </a>
+
+      <a href="stitch.html?mode=camera" class="nav-card card-camera">
+        <span class="icon-label">02</span>
+        <h3>相机模式</h3>
+        <p>实时采集与自动预览</p>
+        <span class="badge" id="stat-output-count">结果: --</span>
+      </a>
+
+      <div class="nav-row">
+        <a href="wifi.html" class="nav-card card-wifi" style="padding-left: 20px;">
+          <span class="icon-label" style="font-size: 32px; top: 16px; right: 16px;">03</span>
+          <h3 style="font-size: 22px;">网络</h3>
+          <span class="badge" id="chip-wifi" style="margin-top: 10px; width: 100%; text-overflow: ellipsis; overflow: hidden; text-align: center; font-size: 13px; padding: 6px 8px;">检测中</span>
+        </a>
+
+        <div class="nav-card card-sys" onclick="startSystemUI()" style="padding-left: 20px;">
+          <span class="icon-label" style="font-size: 32px; top: 16px; right: 16px;">04</span>
+          <h3 style="font-size: 22px;">原厂UI</h3>
+          <div id="tip-systemui" class="badge" style="margin-top: 10px; width: 100%; text-align: center; background: rgba(255,255,255,0.15); font-size: 13px; padding: 6px 8px;">点击切换</div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="system-info">
+      <div class="info-item">
+        <span class="info-label">IP 地址</span>
+        <span id="ipaddr" class="info-value">--</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">运行时间</span>
+        <span id="uptime" class="info-value">--</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">内核版本</span>
+        <span id="kernel" class="info-value">--</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">最近结果</span>
+        <span id="latest-result" class="info-value">--</span>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    function $(id) { return document.getElementById(id); }
+
+    async function fetchJson(url, options = {}) {
+      try {
+        options.cache = 'no-store';
+        const resp = await fetch(url, options);
+        if (!resp.ok) return null;
+        return await resp.json();
+      } catch (e) { return null; }
+    }
+
+    async function startSystemUI() {
+      const tip = $('tip-systemui');
+      tip.textContent = '执行中...';
+      try {
+        const resp = await fetch('/api/start-systemui', { method: 'POST', cache: 'no-store' });
+        const data = await resp.json();
+        if (data && data.ok) {
+          tip.textContent = '已发送';
+        } else {
+          tip.textContent = '无响应';
+        }
+      } catch (e) {
+        tip.textContent = '异常';
+      }
+      setTimeout(() => tip.textContent = '点击切换', 3000);
+    }
+
+    async function updateDashboard() {
+      const [status, stitch, inputs, outputs] = await Promise.all([
+        fetchJson('/api/status', { cache: 'no-store' }),
+        fetchJson('/api/stitch/status', { cache: 'no-store' }),
+        fetchJson('/api/stitch/input-list', { cache: 'no-store' }),
+        fetchJson('/api/stitch/output-list', { cache: 'no-store' })
+      ]);
+
+      if (status) {
+        $('ipaddr').textContent = (status.ip_list && status.ip_list.length > 0) ? status.ip_list[0].ip : (status.ip || '-');
+        $('uptime').textContent = status.uptime || '--';
+        $('kernel').textContent = status.kernel || '--';
+        $('chip-wifi').textContent = status.wifi && status.wifi.length > 8 ? status.wifi.substring(0, 8) + '...' : (status.wifi || '未连');
+        $('ind-wifi').className = 'indicator ' + (status.wifi && status.wifi.includes('connected') ? 'active' : '');
+      }
+
+      if (stitch) {
+        $('chip-backend').textContent = stitch.enabled ? '在线' : '离线';
+        $('ind-backend').className = 'indicator ' + (stitch.enabled ? 'active' : 'error');
+      }
+
+      if (inputs) {
+        $('stat-input-count').textContent = '源图: ' + (inputs.files ? inputs.files.length : 0);
+      }
+
+      if (outputs) {
+        const list = outputs.files || [];
+        $('stat-output-count').textContent = '结果: ' + list.length;
+        $('latest-result').textContent = list.length > 0 ? list[0].name : '--';
+      }
+    }
+
+    updateDashboard();
+    setInterval(updateDashboard, 5000);
+  </script>
+</body>
+</html>

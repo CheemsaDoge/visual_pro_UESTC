@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=400, user-scalable=no, target-densitydpi=device-dpi" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>拼接与相机</title>
+  <style>
+    :root {
+      --bg: #0a0a0c;
+      --card-bg: #151518;
+      --accent: #007aff;
+      --accent-green: #34c759;
+      --accent-red: #ff453a;
+      --text-main: #ffffff;
+      --text-muted: #8e8e93;
+      --radius: 16px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { 
+      margin: 0; padding: 0; width: 100%; height: 100%; 
+      background: var(--bg); color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+    }
+    .app-container { display: flex; flex-direction: column; height: 100vh; }
+
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 60px; padding: 0 16px; border-bottom: 2px solid rgba(255,255,255,0.08);
+    }
+    .back-link { text-decoration: none; color: var(--accent); font-size: 20px; padding: 6px; font-weight: 700; }
+    .mode-switch {
+      display: flex; background: #1c1c1e; border-radius: 10px; padding: 4px;
+    }
+    .mode-btn {
+      padding: 8px 16px; border-radius: 8px; border: none; background: transparent;
+      color: var(--text-muted); font-size: 15px; font-weight: 700;
+    }
+    .mode-btn.active { background: #3a3a3c; color: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+
+    .preview-stage {
+      height: 40vh; background: #000; display: flex; align-items: center; justify-content: center;
+      position: relative; overflow: hidden; border-bottom: 2px solid rgba(255,255,255,0.08);
+    }
+    .preview-stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .stage-label {
+      position: absolute; top: 12px; left: 12px; font-size: 13px; font-weight: 700;
+      background: rgba(0,74,255,0.4); padding: 4px 10px; border-radius: 6px; color: #fff;
+    }
+
+    .controls-section { flex: 1; display: flex; flex-direction: column; padding: 16px; }
+
+    .thumb-rail {
+      display: flex; overflow-x: auto; gap: 12px; padding: 8px 0 16px;
+      scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    }
+    .thumb-rail::-webkit-scrollbar { display: none; }
+    
+    .thumb-item {
+      flex: 0 0 110px; height: 110px; border-radius: 12px; background: #1c1c1e;
+      position: relative; border: 3px solid transparent; overflow: hidden;
+    }
+    .thumb-item.selected { border-color: var(--accent); transform: scale(0.95); }
+    .thumb-item img { width: 100%; height: 100%; object-fit: cover; }
+    .thumb-badge {
+      position: absolute; top: 6px; right: 6px; background: var(--accent);
+      color: #fff; font-size: 14px; width: 24px; height: 24px;
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-weight: 800; box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    }
+
+    .meta-info { flex: 1; font-size: 15px; color: var(--text-muted); overflow-y: auto; margin-bottom: 16px; }
+    .meta-line { margin-bottom: 8px; font-weight: 500; font-size: 16px; }
+    
+    .action-bar { display: flex; gap: 12px; padding-bottom: 8px; }
+    .btn-main {
+      flex: 1; height: 64px; border-radius: 32px; border: none;
+      font-size: 18px; font-weight: 800; cursor: pointer; text-transform: uppercase; letter-spacing: 1px;
+    }
+    .btn-blue { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(0,122,255,0.3); }
+    .btn-green { background: var(--accent-green); color: #fff; box-shadow: 0 4px 12px rgba(52,199,89,0.3); }
+    .btn-red { background: var(--accent-red); color: #fff; box-shadow: 0 4px 12px rgba(255,69,58,0.3); }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <header class="header">
+      <a href="index.html" class="back-link">← 首页</a>
+      <div class="mode-switch">
+        <button id="btn-mode-image" class="mode-btn active" onclick="setMode('image')">图片</button>
+        <button id="btn-mode-camera" class="mode-btn" onclick="setMode('camera')">相机</button>
+      </div>
+      <div style="width: 40px;"></div>
+    </header>
+
+    <div class="preview-stage">
+      <div class="stage-label" id="stage-status">等待输入</div>
+      <img id="main-preview" src="" class="hidden" />
+      <div id="placeholder-text" style="color: #333; font-size: 20px; font-weight: 800;">NO SIGNAL</div>
+    </div>
+
+    <main class="controls-section">
+      <div id="ui-image" class="meta-info">
+        <div class="meta-line">已选: <span id="sel-count" style="color:#fff; font-size: 20px;">0</span> 张</div>
+        <div id="ui-image-rail" class="thumb-rail"></div>
+      </div>
+
+      <div id="ui-camera" class="meta-info hidden">
+        <div class="meta-line">会话 ID: <span id="cam-sid" style="color:#fff">--</span></div>
+        <div class="meta-line">已采集: <span id="cam-count" style="color:#fff; font-size: 20px;">0</span> 张</div>
+      </div>
+
+      <div class="action-bar">
+        <button id="btn-stitch" class="btn-main btn-blue" onclick="runStitch()">开始拼接</button>
+        <button id="btn-cam-start" class="btn-main btn-green hidden" onclick="startCam()">开启预览</button>
+        <button id="btn-cam-shot" class="btn-main btn-blue hidden" onclick="shotCam()">拍照</button>
+        <button id="btn-cam-stop" class="btn-main btn-red hidden" onclick="stopCam()">停止并拼接</button>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const state = {
+      mode: 'image',
+      selected: [],
+      camera: { active: false, sid: '', count: 0 }
+    };
+
+    async function fetchJson(url, options = {}) {
+      try {
+        options.cache = 'no-store';
+        const resp = await fetch(url, options);
+        return await resp.json();
+      } catch (e) { return { ok: false, msg: 'Error' }; }
+    }
+
+    function setMode(m) {
+      state.mode = m;
+      $('btn-mode-image').classList.toggle('active', m === 'image');
+      $('btn-mode-camera').classList.toggle('active', m === 'camera');
+      $('ui-image').classList.toggle('hidden', m !== 'image');
+      $('ui-camera').classList.toggle('hidden', m !== 'camera');
+      updateActions();
+      if (m === 'image') loadImages();
+    }
+
+    function updateActions() {
+      const m = state.mode;
+      $('btn-stitch').classList.toggle('hidden', m !== 'image');
+      
+      const camActive = state.camera.active;
+      $('btn-cam-start').classList.toggle('hidden', m !== 'camera' || camActive);
+      $('btn-cam-shot').classList.toggle('hidden', m !== 'camera' || !camActive);
+      $('btn-cam-stop').classList.toggle('hidden', m !== 'camera' || !camActive);
+    }
+
+    async function loadImages() {
+      const data = await fetchJson('/api/stitch/input-list');
+      const rail = $('ui-image-rail');
+      rail.innerHTML = '';
+      if (data && data.files) {
+        data.files.forEach(f => {
+          const item = document.createElement('div');
+          item.className = 'thumb-item' + (state.selected.includes(f.name) ? ' selected' : '');
+          item.onclick = () => toggleSelect(f.name);
+          const idx = state.selected.indexOf(f.name);
+          const badge = idx >= 0 ? '<div class="thumb-badge">' + (idx + 1) + '</div>' : '';
+          item.innerHTML = `
+            <img src="${f.url}">
+            ${badge}
+          `;
+          rail.appendChild(item);
+        });
+      }
+    }
+
+    function toggleSelect(name) {
+      const idx = state.selected.indexOf(name);
+      if (idx >= 0) state.selected.splice(idx, 1);
+      else state.selected.push(name);
+      $('sel-count').textContent = state.selected.length;
+      loadImages();
+    }
+
+    async function runStitch() {
+      if (state.selected.length < 2) return alert('请至少选择2张');
+      $('btn-stitch').disabled = true;
+      $('btn-stitch').textContent = '拼接中...';
+      const res = await fetchJson('/api/stitch/image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ server_files: state.selected, auto_crop: true })
+      });
+      if (res && res.result_url) {
+        showPreview(res.result_url, '拼接完成');
+      }
+      $('btn-stitch').disabled = false;
+      $('btn-stitch').textContent = '开始拼接';
+    }
+
+    async function startCam() {
+      const res = await fetchJson('/api/camera/start', { 
+        method: 'POST', 
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          mode: 'manual',
+          capture_backend: 'auto_raw',
+          require_rga: true
+        })
+      });
+      if (res && res.session_id) {
+        state.camera.active = true;
+        state.camera.sid = res.session_id;
+        $('cam-sid').textContent = res.session_id;
+        $('stage-status').textContent = 'RGA预览';
+        updateActions();
+        startStreamPreview();
+      } else {
+        $('stage-status').textContent = (res && res.msg) ? res.msg : '相机启动失败';
+      }
+    }
+
+    async function shotCam() {
+      const res = await fetchJson('/api/camera/capture', { method: 'POST' });
+      if (res) {
+        state.camera.count = res.capture_count;
+        $('cam-count').textContent = res.capture_count;
+      }
+    }
+
+    async function stopCam() {
+      const res = await fetchJson('/api/camera/stop', { 
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ auto_crop: true })
+      });
+      state.camera.active = false;
+      updateActions();
+      if (res && res.result_url) showPreview(res.result_url, '拼接完成');
+    }
+
+    function startStreamPreview() {
+      const img = $('main-preview');
+      img.src = '/api/camera/stream?session_id=' + encodeURIComponent(state.camera.sid) + '&t=' + Date.now();
+      img.classList.remove('hidden');
+      $('placeholder-text').classList.add('hidden');
+      img.onerror = () => {
+        if (state.camera.active) setTimeout(pollFrame, 300);
+      };
+    }
+
+    let frameLoading = false;
+    async function pollFrame() {
+      if (!state.camera.active || frameLoading) return;
+      frameLoading = true;
+      const url = '/api/camera/frame.jpg?session_id=' + encodeURIComponent(state.camera.sid) + '&t=' + Date.now();
+      const img = $('main-preview');
+      img.src = url;
+      img.classList.remove('hidden');
+      $('placeholder-text').classList.add('hidden');
+      img.onload = () => { 
+        frameLoading = false; 
+        if (state.camera.active) setTimeout(pollFrame, 100);
+      };
+      img.onerror = () => { frameLoading = false; };
+    }
+
+    function showPreview(url, status) {
+      const img = $('main-preview');
+      img.src = url + '?t=' + Date.now();
+      img.classList.remove('hidden');
+      $('placeholder-text').classList.add('hidden');
+      $('stage-status').textContent = status;
+    }
+
+    function getModeParam() {
+      const q = window.location.search.substring(1);
+      const vars = q.split('&');
+      for (let i = 0; i < vars.length; i++) {
+        const pair = vars[i].split('=');
+        if (pair[0] === 'mode') return pair[1];
+      }
+      return 'image';
+    }
+    
+    setMode(getModeParam() === 'camera' ? 'camera' : 'image');
+  </script>
+</body>
+</html>

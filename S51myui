@@ -1,0 +1,80 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          myui
+# Required-Start:    mountvirtfs
+# Required-Stop:
+# Should-Start:
+# Should-Stop:
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: myui python backend and kiosk
+### END INIT INFO
+
+PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin"
+
+MYUI_BASE="${MYUI_BASE:-/userdata/myui}"
+START_SCRIPT="$MYUI_BASE/start_myui.sh"
+STOP_SCRIPT="$MYUI_BASE/stop_myui.sh"
+BACKEND_FILE="$MYUI_BASE/backend.py"
+
+is_running() {
+    ps -ef | grep "$BACKEND_FILE" | grep -v grep >/dev/null 2>&1
+}
+
+run_start() {
+    export MYUI_BASE_DIR="$MYUI_BASE"
+    if [ ! -f "$BACKEND_FILE" ]; then
+        echo "backend.py not found: $BACKEND_FILE"
+        return 1
+    fi
+    if [ ! -f "$START_SCRIPT" ]; then
+        echo "start script missing: $START_SCRIPT"
+        return 1
+    fi
+    sh "$START_SCRIPT"
+}
+
+run_stop() {
+    export MYUI_BASE_DIR="$MYUI_BASE"
+    if [ ! -f "$STOP_SCRIPT" ]; then
+        echo "stop script missing: $STOP_SCRIPT"
+        return 1
+    fi
+    sh "$STOP_SCRIPT"
+}
+
+case "$1" in
+    start)
+        echo -n "starting myui... "
+        run_start
+        echo "done."
+        ;;
+    stop)
+        echo -n "stopping myui... "
+        run_stop
+        echo "done."
+        ;;
+    restart|reload)
+        echo -n "stopping myui... "
+        run_stop >/dev/null 2>&1 || true
+        echo "done."
+        sleep 1
+        echo -n "starting myui... "
+        run_start
+        echo "done."
+        ;;
+    status)
+        if is_running; then
+            echo "myui python running"
+            exit 0
+        fi
+        echo "myui python stopped"
+        exit 1
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|reload|status}"
+        exit 1
+        ;;
+esac
+
+exit 0
