@@ -7,6 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>拼接与相机</title>
+  <link rel="stylesheet" href="vendor/pannellum/pannellum.css" />
   <style>
     :root {
       --bg: #0a0a0c;
@@ -46,6 +47,7 @@
       position: relative; overflow: hidden; border-bottom: 2px solid rgba(255,255,255,0.08);
     }
     .preview-stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    #panorama-viewer { width: 100%; height: 100%; }
     .stage-label {
       position: absolute; top: 12px; left: 12px; font-size: 13px; font-weight: 700;
       background: rgba(0,74,255,0.4); padding: 4px 10px; border-radius: 6px; color: #fff;
@@ -83,6 +85,13 @@
     .btn-blue { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(0,122,255,0.3); }
     .btn-green { background: var(--accent-green); color: #fff; box-shadow: 0 4px 12px rgba(52,199,89,0.3); }
     .btn-red { background: var(--accent-red); color: #fff; box-shadow: 0 4px 12px rgba(255,69,58,0.3); }
+    .pano-actions {
+      position: absolute; right: 12px; bottom: 12px; z-index: 4; display: flex; gap: 8px;
+    }
+    .pano-action {
+      border: 0; border-radius: 18px; padding: 8px 12px; color: #fff; background: rgba(0,0,0,0.72);
+      font-size: 13px; font-weight: 700; cursor: pointer;
+    }
 
     .hidden { display: none !important; }
   </style>
@@ -101,7 +110,12 @@
     <div class="preview-stage">
       <div class="stage-label" id="stage-status">等待输入</div>
       <img id="main-preview" src="" class="hidden" />
+      <div id="panorama-viewer" class="hidden" aria-label="全景查看器"></div>
       <div id="placeholder-text" style="color: #333; font-size: 20px; font-weight: 800;">NO SIGNAL</div>
+      <div id="pano-actions" class="pano-actions hidden">
+        <button class="pano-action" onclick="closePanorama()">返回</button>
+        <button class="pano-action" onclick="restartCapture()">重新拍摄</button>
+      </div>
     </div>
 
     <main class="controls-section">
@@ -124,12 +138,29 @@
     </main>
   </div>
 
+  <script src="vendor/pannellum/pannellum.js"></script>
   <script>
     const $ = id => document.getElementById(id);
     const state = {
       mode: 'image',
       selected: [],
-      camera: { active: false, sid: '', count: 0 }
+      camera: { active: false, sid: '', count: 0 },
+      viewerConfig: null,
+      panoramaViewer: null
+    };
+
+    const DEFAULT_VIEWER_CONFIG = {
+      haov: 360,
+      vaov: 60,
+      v_offset: 0,
+      initial_yaw: 0,
+      initial_pitch: 0,
+      initial_hfov: 100,
+      min_pitch: -25,
+      max_pitch: 25,
+      min_hfov: 60,
+      max_hfov: 110,
+      output_url_prefix: '/stitch_output/'
     };
 
     async function fetchJson(url, options = {}) {
@@ -141,6 +172,7 @@
     }
 
     function setMode(m) {
+      closePanorama();
       state.mode = m;
       $('btn-mode-image').classList.toggle('active', m === 'image');
       $('btn-mode-camera').classList.toggle('active', m === 'camera');
@@ -198,13 +230,16 @@
         body: JSON.stringify({ server_files: state.selected, auto_crop: true })
       });
       if (res && res.result_url) {
-        showPreview(res.result_url, '拼接完成');
+        await showPanorama(res.result_url);
+      } else {
+        showStageError((res && res.msg) || '拼接失败');
       }
       $('btn-stitch').disabled = false;
       $('btn-stitch').textContent = '开始拼接';
     }
 
     async function startCam() {
+      closePanorama();
       const res = await fetchJson('/api/camera/start', { 
         method: 'POST', 
         headers: {'Content-Type': 'application/json'},
@@ -222,7 +257,7 @@
         updateActions();
         startStreamPreview();
       } else {
-        $('stage-status').textContent = (res && res.msg) ? res.msg : '相机启动失败';
+        showStageError((res && res.msg) || '相机启动失败');
       }
     }
 
@@ -242,10 +277,15 @@
       });
       state.camera.active = false;
       updateActions();
-      if (res && res.result_url) showPreview(res.result_url, '拼接完成');
+      if (res && res.result_url) {
+        await showPanorama(res.result_url);
+      } else {
+        showStageError((res && res.msg) || '拼接失败');
+      }
     }
 
     function startStreamPreview() {
+      closePanorama();
       const img = $('main-preview');
       img.src = '/api/camera/stream?session_id=' + encodeURIComponent(state.camera.sid) + '&t=' + Date.now();
       img.classList.remove('hidden');
@@ -271,12 +311,92 @@
       img.onerror = () => { frameLoading = false; };
     }
 
-    function showPreview(url, status) {
-      const img = $('main-preview');
-      img.src = url + '?t=' + Date.now();
-      img.classList.remove('hidden');
-      $('placeholder-text').classList.add('hidden');
-      $('stage-status').textContent = status;
+    function clearPanorama() {
+      if (state.panoramaViewer && typeof state.panoramaViewer.destroy === 'function') {
+        state.panoramaViewer.destroy();
+      }
+      state.panoramaViewer = null;
+      $('panorama-viewer').replaceChildren();
+      $('panorama-viewer').classList.add('hidden');
+      $('pano-actions').classList.add('hidden');
+    }
+
+    function closePanorama() {
+      clearPanorama();
+      if (!state.camera.active) {
+        $('main-preview').classList.add('hidden');
+        $('placeholder-text').classList.remove('hidden');
+        $('stage-status').textContent = '等待输入';
+      }
+    }
+
+    function showStageError(message) {
+      clearPanorama();
+      $('main-preview').classList.add('hidden');
+      $('placeholder-text').textContent = '操作失败';
+      $('placeholder-text').classList.remove('hidden');
+      $('stage-status').textContent = message;
+    }
+
+    async function getViewerConfig() {
+      if (state.viewerConfig) return state.viewerConfig;
+      const response = await fetchJson('/api/config/public');
+      const stitch = response && response.stitch;
+      state.viewerConfig = Object.assign({}, DEFAULT_VIEWER_CONFIG, stitch && stitch.viewer ? stitch.viewer : {});
+      if (stitch && stitch.output_url_prefix) state.viewerConfig.output_url_prefix = stitch.output_url_prefix;
+      return state.viewerConfig;
+    }
+
+    function getSafePanoramaUrl(rawUrl, config) {
+      const url = new URL(rawUrl, window.location.origin);
+      const prefix = config.output_url_prefix || DEFAULT_VIEWER_CONFIG.output_url_prefix;
+      if (url.origin !== window.location.origin || !url.pathname.startsWith(prefix)) {
+        throw new Error('拼接结果地址无效');
+      }
+      url.searchParams.set('t', Date.now().toString());
+      return url.href;
+    }
+
+    async function showPanorama(rawUrl) {
+      clearPanorama();
+      try {
+        if (!window.pannellum || typeof window.pannellum.viewer !== 'function') {
+          throw new Error('全景查看器资源未加载');
+        }
+        const config = await getViewerConfig();
+        const panoramaUrl = getSafePanoramaUrl(rawUrl, config);
+        $('main-preview').classList.add('hidden');
+        $('placeholder-text').classList.add('hidden');
+        $('panorama-viewer').classList.remove('hidden');
+        state.panoramaViewer = window.pannellum.viewer('panorama-viewer', {
+          type: 'equirectangular',
+          panorama: panoramaUrl,
+          autoLoad: true,
+          showZoomCtrl: true,
+          showFullscreenCtrl: true,
+          haov: config.haov,
+          vaov: config.vaov,
+          vOffset: config.v_offset,
+          yaw: config.initial_yaw,
+          pitch: config.initial_pitch,
+          hfov: config.initial_hfov,
+          minPitch: config.min_pitch,
+          maxPitch: config.max_pitch,
+          minHfov: config.min_hfov,
+          maxHfov: config.max_hfov
+        });
+        state.panoramaViewer.on('error', error => showStageError(error && error.message ? error.message : '全景图加载失败'));
+        $('pano-actions').classList.remove('hidden');
+        $('stage-status').textContent = '全景展示 · 左右拖动查看';
+      } catch (error) {
+        showStageError(error && error.message ? error.message : '全景展示失败');
+      }
+    }
+
+    function restartCapture() {
+      closePanorama();
+      setMode('camera');
+      startCam();
     }
 
     function getModeParam() {

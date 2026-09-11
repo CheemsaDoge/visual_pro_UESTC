@@ -81,6 +81,18 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "input_url_prefix": "/stitch_input/",
         "output_url_prefix": "/stitch_output/",
         "max_image_bytes": 15728640,
+        "viewer": {
+            "haov": 360,
+            "vaov": 60,
+            "v_offset": 0,
+            "initial_yaw": 0,
+            "initial_pitch": 0,
+            "initial_hfov": 100,
+            "min_pitch": -25,
+            "max_pitch": 25,
+            "min_hfov": 60,
+            "max_hfov": 110,
+        },
         "camera": {
             "backend": "auto",
             "capture_backend": "auto_raw",
@@ -304,6 +316,7 @@ ACCEL_CONFIG = APP_CONFIG.get("accel", {}) if isinstance(APP_CONFIG.get("accel")
 SELECTOR_CONFIG = APP_CONFIG.get("selector", {}) if isinstance(APP_CONFIG.get("selector"), dict) else {}
 STITCH_CONFIG = APP_CONFIG.get("stitch", {}) if isinstance(APP_CONFIG.get("stitch"), dict) else {}
 CAMERA_CONFIG = STITCH_CONFIG.get("camera", {}) if isinstance(STITCH_CONFIG.get("camera"), dict) else {}
+PANORAMA_VIEWER_CONFIG = STITCH_CONFIG.get("viewer", {}) if isinstance(STITCH_CONFIG.get("viewer"), dict) else {}
 
 PORT = int(os.environ.get("MYUI_PORT", str(SYSTEM_CONFIG.get("port", 18080))))
 LOG = resolve_path(SYSTEM_CONFIG.get("log_file"), "./backend.log")
@@ -330,6 +343,23 @@ MAX_STITCH_IMAGE_BYTES = safe_int(
     15 * 1024 * 1024,
     min_value=1024,
 )
+
+PANORAMA_HAOV = safe_float(PANORAMA_VIEWER_CONFIG.get("haov", 360), 360, min_value=1.0, max_value=360.0)
+PANORAMA_VAOV = safe_float(PANORAMA_VIEWER_CONFIG.get("vaov", 60), 60, min_value=1.0, max_value=180.0)
+PANORAMA_V_OFFSET = safe_float(PANORAMA_VIEWER_CONFIG.get("v_offset", 0), 0, min_value=-90.0, max_value=90.0)
+PANORAMA_INITIAL_YAW = safe_float(PANORAMA_VIEWER_CONFIG.get("initial_yaw", 0), 0, min_value=-360.0, max_value=360.0)
+PANORAMA_INITIAL_PITCH = safe_float(PANORAMA_VIEWER_CONFIG.get("initial_pitch", 0), 0, min_value=-90.0, max_value=90.0)
+PANORAMA_INITIAL_HFOV = safe_float(PANORAMA_VIEWER_CONFIG.get("initial_hfov", 100), 100, min_value=1.0, max_value=170.0)
+PANORAMA_MIN_PITCH = safe_float(PANORAMA_VIEWER_CONFIG.get("min_pitch", -25), -25, min_value=-90.0, max_value=90.0)
+PANORAMA_MAX_PITCH = safe_float(PANORAMA_VIEWER_CONFIG.get("max_pitch", 25), 25, min_value=-90.0, max_value=90.0)
+if PANORAMA_MIN_PITCH > PANORAMA_MAX_PITCH:
+    PANORAMA_MIN_PITCH, PANORAMA_MAX_PITCH = PANORAMA_MAX_PITCH, PANORAMA_MIN_PITCH
+PANORAMA_INITIAL_PITCH = min(max(PANORAMA_INITIAL_PITCH, PANORAMA_MIN_PITCH), PANORAMA_MAX_PITCH)
+PANORAMA_MIN_HFOV = safe_float(PANORAMA_VIEWER_CONFIG.get("min_hfov", 60), 60, min_value=1.0, max_value=170.0)
+PANORAMA_MAX_HFOV = safe_float(PANORAMA_VIEWER_CONFIG.get("max_hfov", 110), 110, min_value=1.0, max_value=170.0)
+if PANORAMA_MIN_HFOV > PANORAMA_MAX_HFOV:
+    PANORAMA_MIN_HFOV, PANORAMA_MAX_HFOV = PANORAMA_MAX_HFOV, PANORAMA_MIN_HFOV
+PANORAMA_INITIAL_HFOV = min(max(PANORAMA_INITIAL_HFOV, PANORAMA_MIN_HFOV), PANORAMA_MAX_HFOV)
 
 ACCEL_PREPROCESS = normalize_choice(
     ACCEL_CONFIG.get("preprocess", "cpu"),

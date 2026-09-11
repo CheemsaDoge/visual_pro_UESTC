@@ -20,6 +20,11 @@ Write-Host "Pushing wifi.html..." -ForegroundColor Cyan
 Write-Host "Pushing stitch.html..." -ForegroundColor Cyan
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Sender -Port $Port -Baud $Baud -LocalPath "stitch.html" -RemotePath "/userdata/myui/stitch.html"
 
+Write-Host "Pushing offline Pannellum viewer..." -ForegroundColor Cyan
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Sender -Port $Port -Baud $Baud -LocalPath "vendor\pannellum\pannellum.js" -RemotePath "/userdata/myui/vendor/pannellum/pannellum.js"
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Sender -Port $Port -Baud $Baud -LocalPath "vendor\pannellum\pannellum.css" -RemotePath "/userdata/myui/vendor/pannellum/pannellum.css"
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Sender -Port $Port -Baud $Baud -LocalPath "vendor\pannellum\LICENSE" -RemotePath "/userdata/myui/vendor/pannellum/LICENSE"
+
 Write-Host "Installing S51myui boot service..." -ForegroundColor Cyan
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Sender -Port $Port -Baud $Baud -LocalPath "S51myui" -RemotePath "/etc/init.d/S51myui"
 

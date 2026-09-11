@@ -61,6 +61,18 @@ MYUI_CONFIG=/path/to/config.json python3 backend.py
     "output_dir": "./stitch_output",
     "input_url_prefix": "/stitch_input/",
     "output_url_prefix": "/stitch_output/",
+    "viewer": {
+      "haov": 360,
+      "vaov": 60,
+      "v_offset": 0,
+      "initial_yaw": 0,
+      "initial_pitch": 0,
+      "initial_hfov": 100,
+      "min_pitch": -25,
+      "max_pitch": 25,
+      "min_hfov": 60,
+      "max_hfov": 110
+    },
     "camera": {
       "source": 0,
       "frame_width": 0,
@@ -84,6 +96,7 @@ MYUI_CONFIG=/path/to/config.json python3 backend.py
 - `stitch.work_dir`：临时工作目录
 - `stitch.camera.source`：摄像头源（常见为 `0` 或 `/dev/video0`）
 - `stitch.camera.auto_interval_sec`：自动拍摄间隔（默认 `0.5s`）
+- `stitch.viewer`：拼接完成后的 partial panorama 展示参数；默认是单层 `360°` 水平环视、`60°` 垂直视场。
 
 ## 5. 摄像头拼接模式
 
@@ -92,7 +105,15 @@ MYUI_CONFIG=/path/to/config.json python3 backend.py
 - **自行拍摄**：开始后显示实时画面，可手动点击“拍照”保存到 `stitch_input`。
 - **自动拍摄**：开始后后端每 `0.5s` 自动拍 1 张，仅保留“停止录像并拼接”按钮。
 
-停止后会自动调用同一套拼接后端，输出到 `stitch_output` 并在页面展示结果图。
+停止后会自动调用同一套拼接后端，输出到 `stitch_output`，并用本地 Pannellum viewer 交互展示结果。
+
+### Partial panorama 展示
+
+拼接结果是单层水平环视长图，不会被补成完整 `2:1` 球面图。页面只允许在配置的俯仰范围内上下查看，并可左右环视一整圈。
+
+`stitch.viewer.vaov` 初始设为 `60`，应在取得镜头规格或完成实测后校准。实测时，可在已知距离拍摄一面平整墙体，量出画面覆盖的竖直高度，再用 `2 × arctan(覆盖高度 / (2 × 距离))` 估算垂直视场角。
+
+Pannellum 2.5.7 的离线资源及其 MIT 许可证位于 `vendor/pannellum/`；运行时不依赖 Wi-Fi。
 
 ## 6. 路径建议
 
