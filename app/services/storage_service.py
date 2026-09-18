@@ -115,6 +115,49 @@ def clear_stitch_output_images() -> dict:
     return {"ok": True, "msg": "cleared", "deleted_count": deleted_count}
 
 
+def delete_stitch_input_images(names: list) -> dict:
+    """Delete explicitly selected images from the managed stitch-input directory."""
+    if not isinstance(names, list) or not names:
+        return {"ok": False, "msg": "no selected input images", "deleted_count": 0}
+
+    deleted_names = []
+    errors = []
+    seen = set()
+    for raw_name in names:
+        name = (str(raw_name or "").strip())
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        safe_name = os.path.basename(name)
+        if safe_name != name or not is_allowed_image_name(safe_name):
+            errors.append(f"{name}: invalid image name")
+            continue
+        path = os.path.join(config.STITCH_INPUT_DIR, safe_name)
+        if not os.path.isfile(path):
+            errors.append(f"{safe_name}: not found")
+            continue
+        try:
+            os.remove(path)
+            deleted_names.append(safe_name)
+        except Exception as exc:
+            errors.append(f"{safe_name}: {exc}")
+
+    if errors:
+        return {
+            "ok": False,
+            "msg": "failed to delete some selected input images",
+            "deleted_count": len(deleted_names),
+            "deleted_names": deleted_names,
+            "errors": errors,
+        }
+    return {
+        "ok": True,
+        "msg": "deleted",
+        "deleted_count": len(deleted_names),
+        "deleted_names": deleted_names,
+    }
+
+
 def resolve_stitch_input_files(names: list) -> List[str]:
     if not isinstance(names, list) or len(names) < 2:
         raise ValueError("need at least two selected server images")

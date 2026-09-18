@@ -449,6 +449,7 @@
             <button class="rail-tool-btn" onclick="selectAllImages()">全选</button>
             <button class="rail-tool-btn" onclick="invertSelectImages()">反选</button>
             <button class="rail-tool-btn" onclick="clearSelectedImages()">清空</button>
+            <button id="btn-delete-selected" class="rail-tool-btn" onclick="deleteSelectedImages()">删除选中</button>
           </div>
         </div>
         <div id="ui-image-rail" class="thumb-rail"></div>
@@ -568,6 +569,9 @@
       const rail = $('ui-image-rail');
       rail.innerHTML = '';
       state.rawFiles = (data && data.files) ? data.files : [];
+      const currentNames = new Set(state.rawFiles.map(f => f.name));
+      state.selected = state.selected.filter(name => currentNames.has(name));
+      $('sel-count').textContent = state.selected.length;
 
       if (state.rawFiles.length === 0) {
         rail.innerHTML = '<div style="display:flex; align-items:center; justify-content:center; width:100%; color:var(--text-muted); font-size:0.88rem;">stitch_input 目录中暂无源图</div>';
@@ -627,6 +631,34 @@
       state.selected = [];
       $('sel-count').textContent = '0';
       loadImages();
+    }
+
+    async function deleteSelectedImages() {
+      const names = state.selected.slice();
+      if (names.length === 0) {
+        if (window.showToast) window.showToast('未选择图片', '请先选中要删除的源图', 'warning');
+        return;
+      }
+      if (!window.confirm(`确定删除选中的 ${names.length} 张源图吗？此操作不可恢复。`)) return;
+
+      const button = $('btn-delete-selected');
+      button.disabled = true;
+      const res = await fetchJson('/api/stitch/input-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ names })
+      });
+      button.disabled = false;
+
+      const deleted = new Set((res && res.deleted_names) || []);
+      state.selected = state.selected.filter(name => !deleted.has(name));
+      if (res && res.ok) {
+        if (window.showToast) window.showToast('已删除源图', `已删除 ${res.deleted_count || 0} 张`, 'success');
+      } else {
+        const message = (res && res.msg) || '删除失败';
+        if (window.showToast) window.showToast('删除未完成', message, 'error');
+      }
+      await loadImages();
     }
 
     async function runStitch() {
@@ -810,6 +842,35 @@
       return url.href;
     }
 
+    function clamp(value, min, max) {
+      return Math.min(Math.max(value, min), max);
+    }
+
+    async function getResultDimensions(imageUrl) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+        image.onerror = () => reject(new Error('无法读取拼接结果尺寸'));
+        image.src = imageUrl;
+      });
+    }
+
+    function derivePanoramaConfig(config, dimensions) {
+      const ratio = dimensions.width / dimensions.height;
+      const vaov = clamp(Number(config.vaov) || DEFAULT_VIEWER_CONFIG.vaov, 1, 180);
+      const haov = clamp(ratio * vaov, 1, 360);
+      const maxHfov = Math.min(Number(config.max_hfov) || DEFAULT_VIEWER_CONFIG.max_hfov, haov);
+      const minHfov = Math.min(Number(config.min_hfov) || DEFAULT_VIEWER_CONFIG.min_hfov, maxHfov);
+      return {
+        haov,
+        vaov,
+        initialHfov: clamp(Number(config.initial_hfov) || DEFAULT_VIEWER_CONFIG.initial_hfov, minHfov, maxHfov),
+        minHfov,
+        maxHfov,
+        ratio
+      };
+    }
+
     async function showPanorama(rawUrl) {
       clearPanorama();
       try {
@@ -818,6 +879,8 @@
         }
         const config = await getViewerConfig();
         const panoramaUrl = getSafePanoramaUrl(rawUrl, config);
+        const dimensions = await getResultDimensions(panoramaUrl);
+        const panorama = derivePanoramaConfig(config, dimensions);
         $('main-preview').classList.add('hidden');
         $('placeholder-text').classList.add('hidden');
         $('panorama-viewer').classList.remove('hidden');
@@ -827,20 +890,20 @@
           autoLoad: true,
           showZoomCtrl: true,
           showFullscreenCtrl: true,
-          haov: config.haov,
-          vaov: config.vaov,
+          haov: panorama.haov,
+          vaov: panorama.vaov,
           vOffset: config.v_offset,
           yaw: config.initial_yaw,
           pitch: config.initial_pitch,
-          hfov: config.initial_hfov,
+          hfov: panorama.initialHfov,
           minPitch: config.min_pitch,
           maxPitch: config.max_pitch,
-          minHfov: config.min_hfov,
-          maxHfov: config.max_hfov
+          minHfov: panorama.minHfov,
+          maxHfov: panorama.maxHfov
         });
         state.panoramaViewer.on('error', error => showStageError(error && error.message ? error.message : '全景图加载失败'));
         $('pano-actions').classList.remove('hidden');
-        $('stage-status').textContent = '全景交互展示 · 拖拽旋转查看';
+        $('stage-status').textContent = `局部全景 · 约 ${panorama.haov.toFixed(0)}°（按结果比例 ${panorama.ratio.toFixed(2)}:1）`;
       } catch (error) {
         showStageError(error && error.message ? error.message : '全景展示失败');
       }

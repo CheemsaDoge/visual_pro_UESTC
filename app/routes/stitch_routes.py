@@ -5,7 +5,12 @@ from __future__ import annotations
 from app import config
 from app.services.stitch_service import get_stitch_backend_status, run_image_stitch
 from app.services.stitch_diagnostics import get_report, list_reports
-from app.services.storage_service import clear_stitch_output_images, list_stitch_input_images, list_stitch_output_images
+from app.services.storage_service import (
+    clear_stitch_output_images,
+    delete_stitch_input_images,
+    list_stitch_input_images,
+    list_stitch_output_images,
+)
 from app.utils.log import log
 
 
@@ -45,4 +50,8 @@ def handle_post(path: str, payload: dict | None = None):
         log("POST /api/stitch/output-clear")
         result = clear_stitch_output_images()
         return result, 200 if result.get("ok") else 500
+    if path == "/api/stitch/input-delete":
+        log("POST /api/stitch/input-delete")
+        result = delete_stitch_input_images(payload.get("names"))
+        return result, 200 if result.get("ok") else 400
     return None
