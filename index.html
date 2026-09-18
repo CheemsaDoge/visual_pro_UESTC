@@ -6,161 +6,490 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>工作台</title>
+  <title>视觉拼接工作台 · STITCH</title>
+  <link rel="stylesheet" href="ui.css" />
   <style>
-    :root {
-      --bg: #050507;
-      --card-bg: rgba(22, 22, 26, 0.7);
-      --accent-blue: #0a84ff;
-      --accent-green: #30d158;
-      --accent-orange: #ff9f0a;
-      --text-main: #ffffff;
-      --text-muted: #98989d;
-      --status-ok: #32d74b;
-      --status-err: #ff453a;
-      --radius: 24px;
-    }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body { 
-      margin: 0; padding: 0; width: 100%; height: 100%; 
-      background: var(--bg); color: var(--text-main);
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    /* Specific Home Styles */
+    .dashboard-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 16px 20px;
+      gap: 16px;
       overflow: hidden;
-      /* 增加背景渐变氛围光，消除死板的纯黑空洞感 */
-      background-image: 
-        radial-gradient(circle at 10% 0%, rgba(10, 132, 255, 0.15) 0%, transparent 40%),
-        radial-gradient(circle at 90% 100%, rgba(48, 209, 88, 0.1) 0%, transparent 40%);
     }
-    .app-container {
-      display: flex; flex-direction: column; height: 100vh; padding: 20px 20px 24px;
-    }
-    .header-area {
-      display: flex; justify-content: space-between; align-items: center; padding: 10px 0 24px;
-    }
-    .main-title { font-size: 34px; font-weight: 800; margin: 0; letter-spacing: 1px; }
-    .status-group { display: flex; gap: 8px; align-items: center; background: rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 20px; }
-    .indicator { width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); }
-    .indicator.active { background: var(--status-ok); box-shadow: 0 0 10px var(--status-ok); }
-    .indicator.error { background: var(--status-err); box-shadow: 0 0 10px var(--status-err); }
-    
-    .nav-grid {
-      /* 充满剩余空间，卡片自动拉伸填满高度 */
-      flex: 1; display: flex; flex-direction: column; gap: 20px; padding-bottom: 24px;
-    }
-    .nav-row { display: flex; gap: 20px; flex: 1; }
-    
-    /* 移除灰色丑陋边框，采用毛玻璃+发光侧边条+高级阴影 */
-    .nav-card {
-      position: relative; flex: 1; display: flex; flex-direction: column; justify-content: center;
-      padding: 24px 24px 24px 32px; background: var(--card-bg); border-radius: var(--radius); text-decoration: none; color: inherit;
-      box-shadow: 0 16px 32px rgba(0,0,0,0.4); overflow: hidden; cursor: pointer;
+
+    /* Top Brand & Status Bar */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 18px;
+      background: var(--bg-surface-glass);
       backdrop-filter: blur(20px);
-      border: 1px solid rgba(255,255,255,0.03);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
     }
-    .nav-card:active { transform: scale(0.97); }
-    /* 左侧高亮发光条 */
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent-blue) 0%, #3b82f6 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 16px var(--accent-blue-glow);
+    }
+    .brand-title {
+      font-size: 1.55rem;
+      font-weight: 800;
+      letter-spacing: 1px;
+      margin: 0;
+      line-height: 1.1;
+      background: linear-gradient(135deg, #ffffff 40%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .brand-subtitle {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .status-section {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .hud-accel-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 6px 14px;
+      border-radius: var(--radius-full);
+      border: 1px solid var(--border-subtle);
+      font-size: 0.8rem;
+    }
+    .accel-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-weight: 700;
+      color: var(--text-secondary);
+    }
+    .accel-item strong {
+      color: #fff;
+    }
+    .accel-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-green);
+    }
+    .accel-dot.off {
+      background: var(--text-muted);
+    }
+
+    .service-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 6px 12px;
+      border-radius: var(--radius-full);
+      border: 1px solid var(--border-subtle);
+    }
+
+    /* Main Grid Navigation */
+    .dashboard-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: 1.25fr 1fr;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .nav-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 22px 24px;
+      background: var(--bg-surface-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md);
+      text-decoration: none;
+      color: inherit;
+      cursor: pointer;
+      overflow: hidden;
+      transition: all var(--trans-fast);
+    }
+
+    .nav-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--border-active);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.65);
+    }
+    .nav-card:active {
+      transform: scale(0.98);
+    }
+
     .nav-card::before {
-      content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px;
-      background: var(--accent); box-shadow: 0 0 20px var(--accent);
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 5px;
+      background: var(--card-accent);
+      box-shadow: 0 0 16px var(--card-accent);
     }
     .nav-card::after {
-      content: ""; position: absolute; right: -40px; bottom: -40px; width: 180px; height: 180px;
-      border-radius: 50%; background: radial-gradient(circle, var(--accent), transparent 70%); opacity: 0.15;
+      content: "";
+      position: absolute;
+      right: -30px;
+      bottom: -30px;
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--card-accent), transparent 70%);
+      opacity: 0.12;
+      pointer-events: none;
     }
-    
-    .nav-card h3 { margin: 0; font-size: 28px; font-weight: 800; letter-spacing: 1px; }
-    .nav-card p { margin: 8px 0 0; font-size: 16px; color: var(--text-muted); font-weight: 500; }
-    .nav-card .icon-label {
-      position: absolute; top: 20px; right: 24px; font-size: 46px; opacity: 0.9; font-weight: 800;
-      font-style: italic; color: rgba(255,255,255,0.05);
-    }
-    .badge {
-      display: inline-block; padding: 6px 14px; border-radius: 12px; font-size: 14px; font-weight: 700;
-      background: rgba(255,255,255,0.1); margin-top: 16px; color: #fff; align-self: flex-start;
-      border: 1px solid rgba(255,255,255,0.05);
-    }
-    
-    .system-info {
-      padding: 24px 12px 0; border-top: 1px solid rgba(255,255,255,0.1); display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
-    }
-    .info-item { display: flex; flex-direction: column; gap: 6px; }
-    .info-label { font-size: 13px; text-transform: uppercase; color: var(--text-muted); font-weight: 800; letter-spacing: 1px; }
-    .info-value { font-size: 16px; font-weight: 600; color: #eee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    .card-stitch { --accent: var(--accent-blue); }
-    .card-camera { --accent: var(--accent-green); }
-    .card-wifi { --accent: var(--accent-orange); }
-    .card-sys { --accent: #a1a1a6; }
+    .card-stitch { --card-accent: var(--accent-blue); }
+    .card-camera { --card-accent: var(--accent-green); }
+    .card-wifi   { --card-accent: var(--accent-orange); }
+    .card-sys    { --card-accent: #a855f7; }
+    .card-log    { --card-accent: var(--accent-cyan); }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .card-icon-badge {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--card-accent);
+    }
+    .card-number {
+      font-size: 2rem;
+      font-weight: 900;
+      font-style: italic;
+      color: rgba(255, 255, 255, 0.06);
+      line-height: 1;
+    }
+
+    .card-body h3 {
+      margin: 14px 0 6px;
+      font-size: 1.45rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      color: #ffffff;
+    }
+    .card-body p {
+      margin: 0;
+      font-size: 0.92rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+      line-height: 1.4;
+    }
+
+    .card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 14px;
+    }
+
+    .card-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 10px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border-subtle);
+      color: #fff;
+    }
+
+    /* Bottom Info Telemetry Bar */
+    .system-footer {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      padding: 12px 18px;
+      background: var(--bg-surface-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+    }
+    .telemetry-item {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+    }
+    .telemetry-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .telemetry-value {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    @media (max-width: 960px) {
+      .dashboard-grid {
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: auto;
+        overflow-y: auto;
+      }
+      .system-footer {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .hud-accel-bar {
+        display: none;
+      }
+    }
   </style>
 </head>
 <body>
-  <div class="app-container">
-    <header class="header-area">
-      <h1 class="main-title">STITCH</h1>
-      <div class="status-group">
-        <span id="chip-backend" style="font-size: 14px; color: var(--text-muted); font-weight: bold; margin-right: 4px;">后端</span>
-        <div id="ind-backend" class="indicator"></div>
-        <div id="ind-wifi" class="indicator"></div>
+  <div class="dashboard-container">
+    <!-- Top Bar -->
+    <header class="top-bar">
+      <div class="brand-section">
+        <div class="brand-logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">STITCH</h1>
+          <div class="brand-subtitle">RK3588 视觉图像拼接工作台</div>
+        </div>
+      </div>
+
+      <!-- Hardware Acceleration Indicators & Status -->
+      <div class="status-section">
+        <div class="hud-accel-bar" id="hud-accel">
+          <div class="accel-item" title="Rockchip RGA 硬件2D加速">
+            <span class="accel-dot" id="dot-rga"></span>
+            <span>RGA</span>
+            <strong id="val-rga">--</strong>
+          </div>
+          <span style="color:var(--border-medium)">|</span>
+          <div class="accel-item" title="Mali GPU OpenCL 几何变换加速">
+            <span class="accel-dot" id="dot-opencl"></span>
+            <span>GPU</span>
+            <strong id="val-opencl">--</strong>
+          </div>
+          <span style="color:var(--border-medium)">|</span>
+          <div class="accel-item" title="拼接算法执行引擎">
+            <span>引擎</span>
+            <strong id="val-engine" style="color:var(--accent-blue-light)">--</strong>
+          </div>
+        </div>
+
+        <div class="service-pill">
+          <span id="chip-backend" style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 700;">后端服务</span>
+          <div id="ind-backend" class="indicator-dot"></div>
+          <div id="ind-wifi" class="indicator-dot" title="Wi-Fi网络状态"></div>
+        </div>
       </div>
     </header>
 
-    <main class="nav-grid">
+    <!-- Main Navigation Grid -->
+    <main class="dashboard-grid">
+      <!-- 01 图片拼接 -->
       <a href="stitch.html?mode=image" class="nav-card card-stitch">
-        <span class="icon-label">01</span>
-        <h3>图片拼接</h3>
-        <p>选择并合成本地图像</p>
-        <span class="badge" id="stat-input-count">源图: --</span>
+        <div class="card-header">
+          <div class="card-icon-badge">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <polyline points="11 3 11 11 14 8 17 11 17 3"></polyline>
+              <circle cx="8.5" cy="8.5" r="1.5"></circle>
+              <polyline points="21 15 16 10 5 21"></polyline>
+            </svg>
+          </div>
+          <span class="card-number">01</span>
+        </div>
+        <div class="card-body">
+          <h3>图片拼接</h3>
+          <p>从本地图库中选择多视角序列图像，一键执行全景图拼合与校正</p>
+        </div>
+        <div class="card-footer">
+          <span class="card-tag" id="stat-input-count">源图: --</span>
+          <span style="font-size:0.85rem; font-weight:700; color:var(--accent-blue)">进入工作台 →</span>
+        </div>
       </a>
 
+      <!-- 02 相机模式 -->
       <a href="stitch.html?mode=camera" class="nav-card card-camera">
-        <span class="icon-label">02</span>
-        <h3>相机模式</h3>
-        <p>实时采集与自动预览</p>
-        <span class="badge" id="stat-output-count">结果: --</span>
+        <div class="card-header">
+          <div class="card-icon-badge">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+              <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+          </div>
+          <span class="card-number">02</span>
+        </div>
+        <div class="card-body">
+          <h3>相机模式</h3>
+          <p>IMX415 MIPI CSI 实时采流，通过云台旋转连续拍摄并自动合成</p>
+        </div>
+        <div class="card-footer">
+          <span class="card-tag" id="stat-output-count">结果: --</span>
+          <span style="font-size:0.85rem; font-weight:700; color:var(--accent-green)">开启采集 →</span>
+        </div>
       </a>
 
-      <div class="nav-row">
-        <a href="wifi.html" class="nav-card card-wifi" style="padding-left: 20px;">
-          <span class="icon-label" style="font-size: 32px; top: 16px; right: 16px;">03</span>
-          <h3 style="font-size: 22px;">网络</h3>
-          <span class="badge" id="chip-wifi" style="margin-top: 10px; width: 100%; text-overflow: ellipsis; overflow: hidden; text-align: center; font-size: 13px; padding: 6px 8px;">检测中</span>
-        </a>
+      <!-- 03 拼接日志 -->
+      <a href="stitch_log.html" class="nav-card card-log">
+        <div class="card-header">
+          <div class="card-icon-badge">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+          </div>
+          <span class="card-number">03</span>
+        </div>
+        <div class="card-body">
+          <h3>拼接日志</h3>
+          <p>查看各阶段耗时瀑布流、ORB特征点、RGA/OpenCL加速与系统资源消耗</p>
+        </div>
+        <div class="card-footer">
+          <span class="card-tag" id="stat-log-count">历史记录: --</span>
+          <span style="font-size:0.85rem; font-weight:700; color:var(--accent-cyan)">查看诊断 →</span>
+        </div>
+      </a>
 
-        <div class="nav-card card-sys" onclick="startSystemUI()" style="padding-left: 20px;">
-          <span class="icon-label" style="font-size: 32px; top: 16px; right: 16px;">04</span>
-          <h3 style="font-size: 22px;">原厂UI</h3>
-          <div id="tip-systemui" class="badge" style="margin-top: 10px; width: 100%; text-align: center; background: rgba(255,255,255,0.15); font-size: 13px; padding: 6px 8px;">点击切换</div>
+      <!-- 04 网络设置 -->
+      <a href="wifi.html" class="nav-card card-wifi">
+        <div class="card-header">
+          <div class="card-icon-badge">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+              <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+              <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+              <line x1="12" y1="20" x2="12.01" y2="20"></line>
+            </svg>
+          </div>
+          <span class="card-number">04</span>
+        </div>
+        <div class="card-body">
+          <h3>网络设置</h3>
+          <p>ConnMan Wi-Fi 热点扫描、密码认证连接与网卡 IP 配置管理</p>
+        </div>
+        <div class="card-footer">
+          <span class="card-tag" id="chip-wifi">检测中</span>
+          <span style="font-size:0.85rem; font-weight:700; color:var(--accent-orange)">配置连接 →</span>
+        </div>
+      </a>
+
+      <!-- 05 原厂UI切换 -->
+      <div class="nav-card card-sys" onclick="startSystemUI()">
+        <div class="card-header">
+          <div class="card-icon-badge">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+          </div>
+          <span class="card-number">05</span>
+        </div>
+        <div class="card-body">
+          <h3>原厂UI</h3>
+          <p>一键停止当前工作台 Kiosk 桌面，无缝切换回正点原子出厂系统界面</p>
+        </div>
+        <div class="card-footer">
+          <div id="tip-systemui" class="card-tag" style="background:rgba(168,85,247,0.18); border-color:rgba(168,85,247,0.4); color:#e9d5ff;">点击切换</div>
+          <span style="font-size:0.85rem; font-weight:700; color:#c084fc">执行切换 ➔</span>
         </div>
       </div>
-      <a href="stitch_log.html" class="nav-card card-sys" style="flex: 0.55; padding-left: 20px;">
-        <span class="icon-label" style="font-size: 32px; top: 16px; right: 16px;">05</span>
-        <h3 style="font-size: 22px;">拼接日志</h3>
-        <p>耗时、特征点、回退与资源数据</p>
-      </a>
     </main>
 
-    <footer class="system-info">
-      <div class="info-item">
-        <span class="info-label">IP 地址</span>
-        <span id="ipaddr" class="info-value">--</span>
+    <!-- Bottom System Telemetry Bar -->
+    <footer class="system-footer">
+      <div class="telemetry-item">
+        <span class="telemetry-label">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"></rect><rect x="2" y="14" width="20" height="8" rx="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+          IP 地址
+        </span>
+        <span id="ipaddr" class="telemetry-value">--</span>
       </div>
-      <div class="info-item">
-        <span class="info-label">运行时间</span>
-        <span id="uptime" class="info-value">--</span>
+
+      <div class="telemetry-item">
+        <span class="telemetry-label">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          运行时间
+        </span>
+        <span id="uptime" class="telemetry-value">--</span>
       </div>
-      <div class="info-item">
-        <span class="info-label">内核版本</span>
-        <span id="kernel" class="info-value">--</span>
+
+      <div class="telemetry-item">
+        <span class="telemetry-label">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+          系统内核
+        </span>
+        <span id="kernel" class="telemetry-value">--</span>
       </div>
-      <div class="info-item">
-        <span class="info-label">最近结果</span>
-        <span id="latest-result" class="info-value">--</span>
+
+      <div class="telemetry-item">
+        <span class="telemetry-label">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+          最近拼接结果
+        </span>
+        <span id="latest-result" class="telemetry-value">--</span>
       </div>
     </footer>
   </div>
 
+  <script src="ui.js"></script>
   <script>
-    function $(id) { return document.getElementById(id); }
+    const $ = id => document.getElementById(id);
 
     async function fetchJson(url, options = {}) {
       try {
@@ -168,55 +497,88 @@
         const resp = await fetch(url, options);
         if (!resp.ok) return null;
         return await resp.json();
-      } catch (e) { return null; }
+      } catch (e) {
+        return null;
+      }
     }
 
     async function startSystemUI() {
       const tip = $('tip-systemui');
-      tip.textContent = '执行中...';
+      tip.textContent = '切换中...';
       try {
         const resp = await fetch('/api/start-systemui', { method: 'POST', cache: 'no-store' });
         const data = await resp.json();
         if (data && data.ok) {
           tip.textContent = '已发送';
+          if (window.showToast) window.showToast('指令已发送', '正在切换回系统出厂界面...', 'success');
         } else {
           tip.textContent = '无响应';
+          if (window.showToast) window.showToast('切换失败', (data && data.msg) || '后端未响应', 'error');
         }
       } catch (e) {
         tip.textContent = '异常';
+        if (window.showToast) window.showToast('网络错误', '无法连接到后端服务', 'error');
       }
-      setTimeout(() => tip.textContent = '点击切换', 3000);
+      setTimeout(() => { tip.textContent = '点击切换'; }, 3000);
     }
 
     async function updateDashboard() {
-      const [status, stitch, inputs, outputs] = await Promise.all([
-        fetchJson('/api/status', { cache: 'no-store' }),
-        fetchJson('/api/stitch/status', { cache: 'no-store' }),
-        fetchJson('/api/stitch/input-list', { cache: 'no-store' }),
-        fetchJson('/api/stitch/output-list', { cache: 'no-store' })
+      const [status, stitch, inputs, outputs, publicConfig, logs] = await Promise.all([
+        fetchJson('/api/status'),
+        fetchJson('/api/stitch/status'),
+        fetchJson('/api/stitch/input-list'),
+        fetchJson('/api/stitch/output-list'),
+        fetchJson('/api/config/public'),
+        fetchJson('/api/stitch/logs?limit=5')
       ]);
+
+      if (publicConfig && publicConfig.ui && publicConfig.ui.font_zoom) {
+        if (window.syncFontZoom) window.syncFontZoom(publicConfig.ui.font_zoom);
+      }
+
+      // Acceleration HUD
+      if (publicConfig && publicConfig.accel) {
+        const pMode = publicConfig.accel.preprocess ? publicConfig.accel.preprocess.mode : '';
+        const gMode = publicConfig.accel.geometry ? publicConfig.accel.geometry.mode : '';
+        const engine = (publicConfig.stitch && publicConfig.stitch.engine) || 'sequential';
+
+        $('val-rga').textContent = pMode.includes('rga') ? 'ACTIVE' : (pMode || 'CPU');
+        $('dot-rga').className = 'accel-dot' + (pMode.includes('rga') ? '' : ' off');
+
+        $('val-opencl').textContent = gMode.includes('opencl') ? 'OPENCL' : 'CPU';
+        $('dot-opencl').className = 'accel-dot' + (gMode.includes('opencl') ? '' : ' off');
+
+        $('val-engine').textContent = engine.toUpperCase();
+      }
 
       if (status) {
         $('ipaddr').textContent = (status.ip_list && status.ip_list.length > 0) ? status.ip_list[0].ip : (status.ip || '-');
         $('uptime').textContent = status.uptime || '--';
         $('kernel').textContent = status.kernel || '--';
-        $('chip-wifi').textContent = status.wifi && status.wifi.length > 8 ? status.wifi.substring(0, 8) + '...' : (status.wifi || '未连');
-        $('ind-wifi').className = 'indicator ' + (status.wifi && status.wifi.includes('connected') ? 'active' : '');
+        
+        const wifiName = status.wifi || '未连';
+        $('chip-wifi').textContent = wifiName.length > 12 ? wifiName.substring(0, 12) + '...' : wifiName;
+        const isWifiConnected = status.wifi && status.wifi.includes('connected');
+        $('ind-wifi').className = 'indicator-dot ' + (isWifiConnected ? 'active' : '');
       }
 
       if (stitch) {
         $('chip-backend').textContent = stitch.enabled ? '在线' : '离线';
-        $('ind-backend').className = 'indicator ' + (stitch.enabled ? 'active' : 'error');
+        $('ind-backend').className = 'indicator-dot ' + (stitch.enabled ? 'active' : 'error');
       }
 
       if (inputs) {
-        $('stat-input-count').textContent = '源图: ' + (inputs.files ? inputs.files.length : 0);
+        $('stat-input-count').textContent = '源图: ' + (inputs.files ? inputs.files.length : 0) + ' 张';
       }
 
       if (outputs) {
         const list = outputs.files || [];
-        $('stat-output-count').textContent = '结果: ' + list.length;
+        $('stat-output-count').textContent = '结果: ' + list.length + ' 组';
         $('latest-result').textContent = list.length > 0 ? list[0].name : '--';
+      }
+
+      if (logs && logs.reports) {
+        $('stat-log-count').textContent = '历史记录: ' + logs.reports.length + ' 条';
       }
     }
 
