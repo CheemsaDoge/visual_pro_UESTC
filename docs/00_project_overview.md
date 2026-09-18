@@ -44,3 +44,4 @@
 - 落位 RGA 接口和 fallback 机制（已完成并在板端验证过 `rga_active`）。
 - 加入测试和 benchmark 初版（已完成：`tests/unit`、`tests/integration`、`tests/smoke`、`tests/benchmark/run_benchmark.py`）。
 - 建立持续文档体系，方便新对话 5～10 分钟内接手。
+- 让拼接过程可观测：每次拼接记录阶段耗时、算法参数、ORB 特征数据、fallback 原因和资源占用，通过 `GET /api/stitch/logs` 与 `stitch_log.html` 呈现（2026-09-18 合并 `feature-parameter`）。

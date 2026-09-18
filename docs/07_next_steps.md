@@ -15,6 +15,7 @@
 - `ScansStitchEngine`（OpenCV SCANS + 质量过滤 + `registration_resol=0.6`）。
 - 相机节点动态化：`/dev/video-camera0` 别名 + `start_myui.sh` 出帧探测 + 多候选打开。
 - `/etc/init.d/S51myui` 开机启动链路修复与验证。
+- 拼接诊断日志：`stitch_diagnostics.py`、`GET /api/stitch/logs`、`stitch_log.html`、引擎分阶段记录、ORB telemetry、GPU devfreq 采样（2026-09-18 合并 `feature-parameter`）。
 
 ## 当前最该做的事
 
@@ -28,6 +29,13 @@
    - `safe_int` / `normalize_choice` 兜底：`preview_fps` 取 15，`preprocess`/`geometry` 取 `cpu`，`selector` 取 `off`，`engine` 取 `builtin`
 
    建议要么把 `DEFAULT_CONFIG` 与 `config.json` 对齐，要么在文档里统一声明“以 `config.json` / `/api/config/public` 为准”。
+
+6. **验证并加固新增的拼接诊断链路。** 合并 `feature-parameter` 后新增了 `stitch_diagnostics` 与引擎分阶段记录，目前只做过 `py_compile`，还没跑过一次真实拼接。具体待办：
+   - 在装有 OpenCV 的环境或板端跑通一次拼接，确认 `stitch_log.html` 渲染正常、`resources` 各字段取值合理。
+   - 补测试：报告环的 maxlen 行为、`get_report()` 命中与未命中、`_record_stage()` 的耗时累积、`stitch_two_images_with_orb(telemetry=...)` 的字段完整性。
+   - 评估 `StitchEngine.last_run_detail` 的并发安全：引擎是单例，两个并发拼接会互相覆盖该字段，必要时改为按请求传入容器而非挂在实例上。
+   - 评估诊断开销：`image_file_details()` 与 `finish()` 对每张图额外 `cv2.imread()`，大图多图时可考虑改用只读图片头的方式取尺寸。
+   - 在板端确认 `read_gpu()` 能否真正读到 Mali devfreq 计数器；读不到就明确写成不可用，不要让页面看起来像 GPU 没参与。
 
 ## 后续做什么
 

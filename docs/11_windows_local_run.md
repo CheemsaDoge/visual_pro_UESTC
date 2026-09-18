@@ -37,7 +37,7 @@ Linux 开发板上的 Wi-Fi 页面使用 `pty` 和 `termios` 驱动 `connmanctl`
 
 | 本地 Windows 可测试 | 需要 RK3588 开发板 |
 | --- | --- |
-| 页面、接口、静态图片拼接、输出图、Pannellum 全景展示 | CSI 摄像头、`/dev/video*`、NV12、RGA、OpenCL、V4L2/GStreamer、ConnMan Wi-Fi、Chromium kiosk |
+| 页面、接口、静态图片拼接、输出图、Pannellum 全景展示、拼接日志页 | CSI 摄像头、`/dev/video*`、NV12、RGA、OpenCL、V4L2/GStreamer、ConnMan Wi-Fi、Chromium kiosk、日志里的 CPU/内存/GPU/温度数据 |
 
 本地拼接图片请放进 `stitch_input/`，从首页进入“图片拼接”。相机模式是开发板硬件功能；Windows 上不应把相机启动失败当作 Python 环境问题。
 
@@ -48,8 +48,10 @@ Linux 开发板上的 Wi-Fi 页面使用 `pty` 和 `termios` 驱动 `connmanctl`
 - `RgaPreprocessEngine`：`_probe_rga()` 找不到 `/dev/rga*`，`mode_tag` 落到 `rga_fallback_cpu`，实际用 `CpuPreprocessEngine`。
 - `OpenCLGeometryEngine`：`DirectOpenCLRuntime` 加载不到 `libOpenCL.so`，`mode_tag` 落到 `opencl_fallback_cpu`，`warpPerspective`/`remap` 都走 `cv2`。
 - `/api/status` 的 `wifi` 字段返回 `Windows local mode (board Wi-Fi unavailable)`；`ip`/`uptime`/`kernel` 依赖 Linux 命令与 `/proc`，本地大多返回 `-`。
-- `metrics_service` 依赖 `/proc`、`/sys`，所以 benchmark 的 `cpu_percent` 为 `null`，`memory`/`thermal` 为空或带 `error`。
+- `metrics_service` 依赖 `/proc`、`/sys`，所以 benchmark 的 `cpu_percent` 为 `null`，`memory`/`thermal` 为空或带 `error`；拼接日志里的 `resources` 同理，GPU 恒为 `{"devices": [], "available": false}`。
 - `/api/start-systemui` 会尝试 `/bin/sh <switch_script>`，Windows 上必然失败。
+
+本地仍可正常使用的是 `stitch_log.html` 里与算法相关的部分：阶段耗时、ORB 特征点/匹配/内点数、fallback 原因、输入输出尺寸、`backend_process_cpu_time_ms`，这些不依赖 Linux 特有接口。
 
 ## 本地跑测试
 
