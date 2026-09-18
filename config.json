@@ -18,6 +18,8 @@
     "input_url_prefix": "/stitch_input/",
     "output_url_prefix": "/stitch_output/",
     "max_image_bytes": 15728640,
+    "max_canvas_pixels": 8000000,
+    "multiband_max_canvas_pixels": 3000000,
     "viewer": {
       "haov": 360,
       "vaov": 60,

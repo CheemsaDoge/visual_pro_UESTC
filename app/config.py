@@ -81,6 +81,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "input_url_prefix": "/stitch_input/",
         "output_url_prefix": "/stitch_output/",
         "max_image_bytes": 15728640,
+        "max_canvas_pixels": 8000000,
+        "multiband_max_canvas_pixels": 3000000,
         "viewer": {
             "haov": 360,
             "vaov": 60,
@@ -342,6 +344,21 @@ MAX_STITCH_IMAGE_BYTES = safe_int(
     STITCH_CONFIG.get("max_image_bytes", 15 * 1024 * 1024),
     15 * 1024 * 1024,
     min_value=1024,
+)
+MAX_STITCH_CANVAS_PIXELS = safe_int(
+    STITCH_CONFIG.get("max_canvas_pixels", 8_000_000),
+    8_000_000,
+    min_value=1_000_000,
+    max_value=32_000_000,
+)
+MULTIBAND_MAX_STITCH_CANVAS_PIXELS = min(
+    MAX_STITCH_CANVAS_PIXELS,
+    safe_int(
+        STITCH_CONFIG.get("multiband_max_canvas_pixels", 3_000_000),
+        3_000_000,
+        min_value=250_000,
+        max_value=MAX_STITCH_CANVAS_PIXELS,
+    ),
 )
 
 PANORAMA_HAOV = safe_float(PANORAMA_VIEWER_CONFIG.get("haov", 360), 360, min_value=1.0, max_value=360.0)

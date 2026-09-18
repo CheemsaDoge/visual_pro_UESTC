@@ -9,6 +9,7 @@ import numpy as np
 from app.stitch_engine.opencv_engine import OpenCVStitchEngine
 from app.stitch_engine.scans_engine import ScansStitchEngine
 from app.stitch_engine.sequential_engine import SequentialPanoEngine
+from app.stitch_engine.common import get_canvas_plan
 
 
 def create_overlap_pair(tmpdir):
@@ -50,6 +51,19 @@ def create_overlap_triplet(tmpdir):
 
 
 class OpenCVStitchEngineTest(unittest.TestCase):
+    def test_canvas_plan_rejects_oversized_warp_before_allocation(self):
+        ok, message, use_multiband, pixels = get_canvas_plan(8000, 2000, 1920, 1080, 1920, 1080)
+        self.assertFalse(ok)
+        self.assertIn("safe board memory", message)
+        self.assertFalse(use_multiband)
+        self.assertEqual(pixels, 16_000_000)
+
+    def test_canvas_plan_uses_low_memory_blend_above_multiband_limit(self):
+        ok, message, use_multiband, pixels = get_canvas_plan(2000, 1800, 1920, 1080, 1920, 1080)
+        self.assertTrue(ok, message)
+        self.assertFalse(use_multiband)
+        self.assertEqual(pixels, 3_600_000)
+
     def test_two_image_stitch(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             p1, p2 = create_overlap_pair(tmpdir)

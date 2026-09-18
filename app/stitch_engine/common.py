@@ -6,6 +6,8 @@ import os
 import time
 from typing import List, Sequence, Tuple
 
+from app import config
+
 DEFAULT_MAX_IMAGE_WIDTH = 1920
 DEFAULT_ORB_FEATURES = 2000
 DEFAULT_MATCH_RATIO = 0.9
@@ -150,13 +152,33 @@ def save_result_image(output_path: str, image, cv2) -> bool:
     return bool(cv2.imwrite(output_path, image))
 
 
-def _blend_warped_pair(base_canvas, warped_image, mask1, mask2, cv2):
+def get_canvas_plan(canvas_w: int, canvas_h: int, w1: int, h1: int, w2: int, h2: int) -> tuple[bool, str, bool, int]:
+    """Validate a warp canvas before allocating it on the memory-constrained board."""
+    canvas_pixels = canvas_w * canvas_h
+    max_dim = max(w1 + w2, h1 + h2, 1) * 4
+    legacy_max_area = max(1, (w1 * h1 + w2 * h2) * 12)
+    if canvas_w < 1 or canvas_h < 1:
+        return False, "homography produced an empty canvas", False, canvas_pixels
+    if canvas_w > max_dim or canvas_h > max_dim or canvas_pixels > legacy_max_area:
+        return False, "homography produced unreasonable canvas", False, canvas_pixels
+    if canvas_pixels > config.MAX_STITCH_CANVAS_PIXELS:
+        return (
+            False,
+            "homography canvas is too large for safe board memory "
+            f"({canvas_w}x{canvas_h}, limit {config.MAX_STITCH_CANVAS_PIXELS} pixels)",
+            False,
+            canvas_pixels,
+        )
+    return True, "", canvas_pixels <= config.MULTIBAND_MAX_STITCH_CANVAS_PIXELS, canvas_pixels
+
+
+def _blend_warped_pair(base_canvas, warped_image, mask1, mask2, cv2, *, use_multiband: bool):
     import numpy as np
 
-    if hasattr(cv2, "detail_MultiBandBlender"):
+    if use_multiband and hasattr(cv2, "detail_MultiBandBlender"):
         try:
             blender = cv2.detail_MultiBandBlender()
-            blender.setNumBands(5)
+            blender.setNumBands(3)
             blender.prepare((0, 0, base_canvas.shape[1], base_canvas.shape[0]))
             blender.feed(base_canvas.astype(np.int16), mask1, (0, 0))
             blender.feed(warped_image.astype(np.int16), mask2, (0, 0))
@@ -245,8 +267,31 @@ def stitch_two_images_with_orb(
     img2_corners = np.float32([[0, 0], [w2, 0], [w2, h2], [0, h2]]).reshape(-1, 1, 2)
     warped_img2_corners = cv2.perspectiveTransform(img2_corners, homography)
     all_corners = np.concatenate((img1_corners, warped_img2_corners), axis=0)
-    x_min, y_min = np.int32(all_corners.min(axis=0).ravel() - 0.5)
-    x_max, y_max = np.int32(all_corners.max(axis=0).ravel() + 0.5)
+    if not np.isfinite(all_corners).all():
+        telemetry["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
+        return False, "homography produced non-finite coordinates"
+
+    min_x, min_y = all_corners.min(axis=0).ravel()
+    max_x, max_y = all_corners.max(axis=0).ravel()
+    x_min = int(np.floor(min_x))
+    y_min = int(np.floor(min_y))
+    x_max = int(np.ceil(max_x))
+    y_max = int(np.ceil(max_y))
+    canvas_w = x_max - x_min
+    canvas_h = y_max - y_min
+    canvas_ok, canvas_error, use_multiband, canvas_pixels = get_canvas_plan(
+        canvas_w, canvas_h, w1, h1, w2, h2
+    )
+    telemetry["canvas"] = {
+        "width": canvas_w,
+        "height": canvas_h,
+        "pixels": canvas_pixels,
+        "max_safe_pixels": config.MAX_STITCH_CANVAS_PIXELS,
+        "blend": "multiband" if use_multiband else "linear",
+    }
+    if not canvas_ok:
+        telemetry["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
+        return False, canvas_error
 
     offset_x = -x_min
     offset_y = -y_min
@@ -258,14 +303,6 @@ def stitch_two_images_with_orb(
         ],
         dtype=np.float32,
     )
-    canvas_w = max(1, x_max - x_min)
-    canvas_h = max(1, y_max - y_min)
-    max_dim = max(w1 + w2, h1 + h2, 1) * 4
-    max_area = max(1, (w1 * h1 + w2 * h2) * 12)
-    if canvas_w > max_dim or canvas_h > max_dim or canvas_w * canvas_h > max_area:
-        telemetry["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
-        return False, "homography produced unreasonable canvas"
-
     transform = translation.dot(homography)
     warped_img2 = geometry_engine.warp_perspective(img2, transform, (canvas_w, canvas_h))
     if warped_img2 is None or getattr(warped_img2, "size", 0) == 0:
@@ -285,12 +322,19 @@ def stitch_two_images_with_orb(
         (canvas_w, canvas_h),
     )
 
-    result = _blend_warped_pair(base_canvas, warped_img2, mask1, mask2, cv2)
+    result = _blend_warped_pair(
+        base_canvas,
+        warped_img2,
+        mask1,
+        mask2,
+        cv2,
+        use_multiband=use_multiband,
+    )
     if auto_crop:
         result = crop_nonzero_area(result, cv2)
         if result is None or getattr(result, "size", 0) == 0:
             telemetry["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
             return False, "empty stitch result"
-    telemetry["canvas"] = {"width": int(result.shape[1]), "height": int(result.shape[0])}
+    telemetry["canvas"].update({"width": int(result.shape[1]), "height": int(result.shape[0])})
     telemetry["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
     return True, result

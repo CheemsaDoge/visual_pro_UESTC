@@ -144,6 +144,8 @@ def get_public_config() -> dict:
             "output_dir": config.STITCH_OUTPUT_DIR,
             "input_url_prefix": config.STITCH_INPUT_URL_PREFIX,
             "output_url_prefix": config.STITCH_OUTPUT_URL_PREFIX,
+            "max_canvas_pixels": config.MAX_STITCH_CANVAS_PIXELS,
+            "multiband_max_canvas_pixels": config.MULTIBAND_MAX_STITCH_CANVAS_PIXELS,
             "viewer": {
                 "library": "pannellum",
                 "version": "2.5.7",
