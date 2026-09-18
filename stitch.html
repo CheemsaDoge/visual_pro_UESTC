@@ -6,147 +6,505 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>拼接与相机</title>
+  <title>拼接与相机工作台 · STITCH</title>
   <link rel="stylesheet" href="vendor/pannellum/pannellum.css" />
+  <link rel="stylesheet" href="ui.css" />
   <style>
-    :root {
-      --bg: #0a0a0c;
-      --card-bg: #151518;
-      --accent: #007aff;
-      --accent-green: #34c759;
-      --accent-red: #ff453a;
-      --text-main: #ffffff;
-      --text-muted: #8e8e93;
-      --radius: 16px;
-    }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body { 
-      margin: 0; padding: 0; width: 100%; height: 100%; 
-      background: var(--bg); color: var(--text-main);
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    /* Specific Stitch Workbench Styles */
+    .stitch-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 14px 16px;
+      gap: 12px;
       overflow: hidden;
     }
-    .app-container { display: flex; flex-direction: column; height: 100vh; }
 
-    .header {
-      display: flex; align-items: center; justify-content: space-between;
-      height: 60px; padding: 0 16px; border-bottom: 2px solid rgba(255,255,255,0.08);
+    /* Workbench Header */
+    .wb-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 52px;
+      padding: 0 14px;
+      background: var(--bg-surface-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      flex-shrink: 0;
     }
-    .back-link { text-decoration: none; color: var(--accent); font-size: 20px; padding: 6px; font-weight: 700; }
-    .mode-switch {
-      display: flex; background: #1c1c1e; border-radius: 10px; padding: 4px;
-    }
-    .mode-btn {
-      padding: 8px 16px; border-radius: 8px; border: none; background: transparent;
-      color: var(--text-muted); font-size: 15px; font-weight: 700;
-    }
-    .mode-btn.active { background: #3a3a3c; color: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
 
+    .mode-switch-group {
+      display: flex;
+      background: rgba(0, 0, 0, 0.45);
+      border-radius: var(--radius-full);
+      padding: 4px;
+      border: 1px solid var(--border-subtle);
+    }
+    .mode-tab-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 18px;
+      border-radius: var(--radius-full);
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all var(--trans-fast);
+    }
+    .mode-tab-btn.active {
+      background: linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.08) 100%);
+      color: #ffffff;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    }
+    .mode-tab-btn.active#btn-mode-image {
+      background: linear-gradient(135deg, var(--accent-blue) 0%, #0284c7 100%);
+      box-shadow: 0 0 14px var(--accent-blue-glow);
+    }
+    .mode-tab-btn.active#btn-mode-camera {
+      background: linear-gradient(135deg, var(--accent-green) 0%, #059669 100%);
+      box-shadow: 0 0 14px var(--accent-green-glow);
+    }
+
+    /* Interactive Preview Viewport Stage */
     .preview-stage {
-      height: 40vh; background: #000; display: flex; align-items: center; justify-content: center;
-      position: relative; overflow: hidden; border-bottom: 2px solid rgba(255,255,255,0.08);
+      flex: 1.15;
+      min-height: 280px;
+      background: #000000;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.85);
     }
-    .preview-stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
-    #panorama-viewer { width: 100%; height: 100%; }
-    .stage-label {
-      position: absolute; top: 12px; left: 12px; font-size: 13px; font-weight: 700;
-      background: rgba(0,74,255,0.4); padding: 4px 10px; border-radius: 6px; color: #fff;
+    .preview-stage img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      user-select: none;
+    }
+    #panorama-viewer {
+      width: 100%;
+      height: 100%;
     }
 
-    .controls-section { flex: 1; display: flex; flex-direction: column; padding: 16px; }
+    /* HUD overlays on Stage */
+    .stage-hud {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .stage-badge {
+      pointer-events: auto;
+      font-size: 0.82rem;
+      font-weight: 700;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      padding: 6px 14px;
+      border-radius: var(--radius-full);
+      color: #f8fafc;
+      border: 1px solid var(--border-medium);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* Grid Guidelines for Panorama Aligning */
+    .viewfinder-grid {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.25;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-rows: 1fr 1fr 1fr;
+    }
+    .viewfinder-grid > div {
+      border-right: 1px dashed rgba(255, 255, 255, 0.6);
+      border-bottom: 1px dashed rgba(255, 255, 255, 0.6);
+    }
+    .viewfinder-grid > div:nth-child(3n) {
+      border-right: none;
+    }
+    .viewfinder-grid > div:nth-child(n+7) {
+      border-bottom: none;
+    }
+
+    /* Floating Result Action Toolbar */
+    .pano-actions {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      display: flex;
+      gap: 8px;
+      background: rgba(10, 14, 23, 0.88);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      padding: 6px 10px;
+      border-radius: var(--radius-full);
+      border: 1px solid var(--border-medium);
+      box-shadow: var(--shadow-lg);
+    }
+    .pano-action-btn {
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-full);
+      padding: 8px 16px;
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.08);
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all var(--trans-fast);
+      white-space: nowrap;
+    }
+    .pano-action-btn:hover {
+      background: rgba(255, 255, 255, 0.18);
+      border-color: var(--border-medium);
+      transform: translateY(-1px);
+    }
+    .pano-action-btn:active {
+      transform: translateY(1px);
+    }
+    .pano-action-btn.btn-active {
+      background: var(--accent-blue);
+      box-shadow: 0 0 10px var(--accent-blue-glow);
+    }
+
+    /* Lower Section: Controls, Rail, Buttons */
+    .lower-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: var(--bg-surface-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 14px 18px;
+      flex-shrink: 0;
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* Image Rail Controls */
+    .rail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .rail-quick-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .rail-tool-btn {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--trans-fast);
+    }
+    .rail-tool-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.12);
+    }
 
     .thumb-rail {
-      display: flex; overflow-x: auto; gap: 12px; padding: 8px 0 16px;
-      scrollbar-width: none; -webkit-overflow-scrolling: touch;
+      display: flex;
+      overflow-x: auto;
+      gap: 12px;
+      padding: 6px 2px 8px;
+      scrollbar-width: thin;
+      -webkit-overflow-scrolling: touch;
+      min-height: 105px;
     }
-    .thumb-rail::-webkit-scrollbar { display: none; }
-    
+
     .thumb-item {
-      flex: 0 0 110px; height: 110px; border-radius: 12px; background: #1c1c1e;
-      position: relative; border: 3px solid transparent; overflow: hidden;
+      flex: 0 0 96px;
+      height: 96px;
+      border-radius: 12px;
+      background: #182030;
+      position: relative;
+      border: 2px solid var(--border-subtle);
+      overflow: hidden;
+      cursor: pointer;
+      transition: all var(--trans-fast);
     }
-    .thumb-item.selected { border-color: var(--accent); transform: scale(0.95); }
-    .thumb-item img { width: 100%; height: 100%; object-fit: cover; }
+    .thumb-item:hover {
+      border-color: rgba(14, 165, 233, 0.4);
+      transform: translateY(-2px);
+    }
+    .thumb-item.selected {
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 14px var(--accent-blue-glow);
+      transform: scale(0.96);
+    }
+    .thumb-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
     .thumb-badge {
-      position: absolute; top: 6px; right: 6px; background: var(--accent);
-      color: #fff; font-size: 14px; width: 24px; height: 24px;
-      border-radius: 50%; display: flex; align-items: center; justify-content: center;
-      font-weight: 800; box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      background: linear-gradient(135deg, var(--accent-blue) 0%, #0284c7 100%);
+      color: #ffffff;
+      font-size: 0.8rem;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+      border: 1.5px solid #ffffff;
+    }
+    .thumb-item-name {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(to top, rgba(0,0,0,0.85), transparent);
+      padding: 4px 6px;
+      font-size: 0.65rem;
+      color: #e2e8f0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
-    .meta-info { flex: 1; font-size: 15px; color: var(--text-muted); overflow-y: auto; margin-bottom: 16px; }
-    .meta-line { margin-bottom: 8px; font-weight: 500; font-size: 16px; }
-    
-    .action-bar { display: flex; gap: 12px; padding-bottom: 8px; }
-    .btn-main {
-      flex: 1; height: 64px; border-radius: 32px; border: none;
-      font-size: 18px; font-weight: 800; cursor: pointer; text-transform: uppercase; letter-spacing: 1px;
+    /* Camera HUD Cards */
+    .cam-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      padding: 4px 0;
     }
-    .btn-blue { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(0,122,255,0.3); }
-    .btn-green { background: var(--accent-green); color: #fff; box-shadow: 0 4px 12px rgba(52,199,89,0.3); }
-    .btn-red { background: var(--accent-red); color: #fff; box-shadow: 0 4px 12px rgba(255,69,58,0.3); }
-    .pano-actions {
-      position: absolute; right: 12px; bottom: 12px; z-index: 4; display: flex; gap: 8px;
+    .cam-tile {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
     }
-    .pano-action {
-      border: 0; border-radius: 18px; padding: 8px 12px; color: #fff; background: rgba(0,0,0,0.72);
-      font-size: 13px; font-weight: 700; cursor: pointer;
+    .cam-tile-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .cam-tile-val {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: #ffffff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
 
-    .hidden { display: none !important; }
+    /* Action Buttons Bar */
+    .action-bar {
+      display: flex;
+      gap: 12px;
+      padding-top: 4px;
+    }
+    .action-bar .btn {
+      flex: 1;
+      height: 56px;
+      font-size: 1.05rem;
+      border-radius: var(--radius-full);
+      box-shadow: var(--shadow-md);
+    }
   </style>
 </head>
 <body>
-  <div class="app-container">
-    <header class="header">
-      <a href="index.html" class="back-link">← 首页</a>
-      <div class="mode-switch">
-        <button id="btn-mode-image" class="mode-btn active" onclick="setMode('image')">图片</button>
-        <button id="btn-mode-camera" class="mode-btn" onclick="setMode('camera')">相机</button>
+  <div class="stitch-container">
+    <!-- Top Header -->
+    <header class="wb-header">
+      <a href="index.html" class="header-nav-btn" title="返回主界面">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        <span>首页</span>
+      </a>
+
+      <!-- Mode Switcher (Image vs Camera) -->
+      <div class="mode-switch-group">
+        <button id="btn-mode-image" class="mode-tab-btn active" onclick="setMode('image')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <span>图片拼接</span>
+        </button>
+        <button id="btn-mode-camera" class="mode-tab-btn" onclick="setMode('camera')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span>相机采集</span>
+        </button>
       </div>
-      <a href="stitch_log.html" class="back-link" style="font-size:15px;">日志</a>
+
+      <a href="stitch_log.html" class="header-nav-btn" style="color:var(--accent-cyan);" title="查看拼接诊断日志">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+        </svg>
+        <span>日志</span>
+      </a>
     </header>
 
-    <div class="preview-stage">
-      <div class="stage-label" id="stage-status">等待输入</div>
-      <img id="main-preview" src="" class="hidden" />
+    <!-- Interactive Preview Viewport Stage -->
+    <div class="preview-stage" id="stage-box">
+      <!-- Stage HUD overlay -->
+      <div class="stage-hud">
+        <div class="stage-badge" id="stage-status-badge">
+          <span class="indicator-dot active" id="stage-status-dot"></span>
+          <span id="stage-status">等待输入</span>
+        </div>
+
+        <div class="stage-badge" id="camera-hud-tag" style="display:none;">
+          <span style="color:var(--accent-green); font-weight:800;">● LIVE</span>
+          <span id="cam-hud-spec">1080P · RGA NV12</span>
+        </div>
+      </div>
+
+      <!-- Alignment Guide Lines -->
+      <div class="viewfinder-grid" id="viewfinder-grid" style="display:none;">
+        <div></div><div></div><div></div>
+        <div></div><div></div><div></div>
+        <div></div><div></div><div></div>
+      </div>
+      <div class="crosshair-center" id="crosshair-center" style="display:none;"></div>
+
+      <!-- Preview Image Element (Stream / Stitched) -->
+      <img id="main-preview" src="" class="hidden" alt="拼接预览" />
+
+      <!-- Panorama Viewer (Pannellum) -->
       <div id="panorama-viewer" class="hidden" aria-label="全景查看器"></div>
-      <div id="placeholder-text" style="color: #333; font-size: 20px; font-weight: 800;">NO SIGNAL</div>
+
+      <!-- No Signal Placeholder -->
+      <div id="placeholder-text" style="display:flex; flex-direction:column; align-items:center; gap:12px; color:#475569;">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="2" y="2" width="20" height="20" rx="4"></rect>
+          <path d="M2 12h20M12 2v20"></path>
+        </svg>
+        <span style="font-size:1.15rem; font-weight:800; letter-spacing:1px;">NO SIGNAL / STANDBY</span>
+        <span style="font-size:0.85rem; color:#64748b;">请选择本地源图或开启相机实时预览</span>
+      </div>
+
+      <!-- Floating Actions Toolbar for Stitched Results -->
       <div id="pano-actions" class="pano-actions hidden">
-        <button class="pano-action" onclick="showResult('panorama')">展示全景图</button>
-        <button class="pano-action" onclick="showResult('image')">展示拼接图像</button>
-        <button class="pano-action" onclick="openCurrentLog()">本次日志</button>
-        <button class="pano-action" onclick="closePanorama()">返回</button>
-        <button class="pano-action" onclick="restartCapture()">重新拍摄</button>
+        <button class="pano-action-btn btn-active" onclick="showResult('panorama')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+          展示全景图
+        </button>
+        <button class="pano-action-btn" onclick="showResult('image')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          展示拼接图像
+        </button>
+        <button class="pano-action-btn" onclick="openCurrentLog()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          本次日志
+        </button>
+        <button class="pano-action-btn" onclick="closePanorama()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          返回
+        </button>
+        <button class="pano-action-btn" onclick="restartCapture()" style="color:#34d399;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+          重新拍摄
+        </button>
       </div>
     </div>
 
-    <main class="controls-section">
-      <div id="ui-image" class="meta-info">
-        <div class="meta-line">已选: <span id="sel-count" style="color:#fff; font-size: 20px;">0</span> 张</div>
+    <!-- Lower Controls Section -->
+    <main class="lower-section">
+      <!-- Image Mode Controls -->
+      <div id="ui-image">
+        <div class="rail-header">
+          <div style="font-size:0.95rem; font-weight:700; color:var(--text-main);">
+            已选源图: <span id="sel-count" style="color:var(--accent-blue-light); font-size:1.2rem; font-weight:800;">0</span> 张
+          </div>
+          <div class="rail-quick-actions">
+            <button class="rail-tool-btn" onclick="selectAllImages()">全选</button>
+            <button class="rail-tool-btn" onclick="invertSelectImages()">反选</button>
+            <button class="rail-tool-btn" onclick="clearSelectedImages()">清空</button>
+          </div>
+        </div>
         <div id="ui-image-rail" class="thumb-rail"></div>
       </div>
 
-      <div id="ui-camera" class="meta-info hidden">
-        <div class="meta-line">会话 ID: <span id="cam-sid" style="color:#fff">--</span></div>
-        <div class="meta-line">已采集: <span id="cam-count" style="color:#fff; font-size: 20px;">0</span> 张</div>
+      <!-- Camera Mode Controls -->
+      <div id="ui-camera" class="hidden">
+        <div class="cam-meta-grid">
+          <div class="cam-tile">
+            <span class="cam-tile-label">采集会话 ID</span>
+            <span id="cam-sid" class="cam-tile-val text-truncate">--</span>
+          </div>
+          <div class="cam-tile">
+            <span class="cam-tile-label">已采集帧数</span>
+            <span class="cam-tile-val" style="color:var(--accent-green-light);"><span id="cam-count">0</span> 张</span>
+          </div>
+          <div class="cam-tile">
+            <span class="cam-tile-label">硬件加速管线</span>
+            <span id="cam-accel-tag" class="cam-tile-val" style="font-size:0.95rem; color:#38bdf8;">RGA NV12</span>
+          </div>
+        </div>
       </div>
 
+      <!-- Action Buttons Bar -->
       <div class="action-bar">
-        <button id="btn-stitch" class="btn-main btn-blue" onclick="runStitch()">开始拼接</button>
-        <button id="btn-cam-start" class="btn-main btn-green hidden" onclick="startCam()">开启预览</button>
-        <button id="btn-cam-shot" class="btn-main btn-blue hidden" onclick="shotCam()">拍照</button>
-        <button id="btn-cam-stop" class="btn-main btn-red hidden" onclick="stopCam()">停止并拼接</button>
+        <button id="btn-stitch" class="btn btn-primary" onclick="runStitch()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          <span>开始拼接</span>
+        </button>
+
+        <button id="btn-cam-start" class="btn btn-success hidden" onclick="startCam()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/></svg>
+          <span>开启实时预览</span>
+        </button>
+
+        <button id="btn-cam-shot" class="btn btn-primary hidden" onclick="shotCam()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span>拍摄当前帧</span>
+        </button>
+
+        <button id="btn-cam-stop" class="btn btn-danger hidden" onclick="stopCam()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>
+          <span>停止并执行拼接</span>
+        </button>
       </div>
     </main>
   </div>
 
   <script src="vendor/pannellum/pannellum.js"></script>
+  <script src="ui.js"></script>
   <script>
     const $ = id => document.getElementById(id);
     const state = {
       mode: 'image',
       selected: [],
+      rawFiles: [],
       camera: { active: false, sid: '', count: 0 },
       viewerConfig: null,
       panoramaViewer: null,
@@ -173,7 +531,9 @@
         options.cache = 'no-store';
         const resp = await fetch(url, options);
         return await resp.json();
-      } catch (e) { return { ok: false, msg: 'Error' }; }
+      } catch (e) {
+        return { ok: false, msg: '网络或服务异常' };
+      }
     }
 
     function setMode(m) {
@@ -183,6 +543,12 @@
       $('btn-mode-camera').classList.toggle('active', m === 'camera');
       $('ui-image').classList.toggle('hidden', m !== 'image');
       $('ui-camera').classList.toggle('hidden', m !== 'camera');
+
+      const isCam = m === 'camera';
+      $('viewfinder-grid').style.display = isCam && state.camera.active ? 'grid' : 'none';
+      $('crosshair-center').style.display = isCam && state.camera.active ? 'block' : 'none';
+      $('camera-hud-tag').style.display = isCam && state.camera.active ? 'flex' : 'none';
+
       updateActions();
       if (m === 'image') loadImages();
     }
@@ -190,7 +556,7 @@
     function updateActions() {
       const m = state.mode;
       $('btn-stitch').classList.toggle('hidden', m !== 'image');
-      
+
       const camActive = state.camera.active;
       $('btn-cam-start').classList.toggle('hidden', m !== 'camera' || camActive);
       $('btn-cam-shot').classList.toggle('hidden', m !== 'camera' || !camActive);
@@ -201,29 +567,36 @@
       const data = await fetchJson('/api/stitch/input-list');
       const rail = $('ui-image-rail');
       rail.innerHTML = '';
-      if (data && data.files) {
-        data.files.forEach(f => {
-          const item = document.createElement('div');
-          item.className = 'thumb-item' + (state.selected.includes(f.name) ? ' selected' : '');
-          item.onclick = () => toggleSelect(f.name);
-          item.setAttribute('role', 'button');
-          item.tabIndex = 0;
-          item.setAttribute('aria-label', '选择图片 ' + f.name);
-          item.onkeydown = event => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              toggleSelect(f.name);
-            }
-          };
-          const idx = state.selected.indexOf(f.name);
-          const badge = idx >= 0 ? '<div class="thumb-badge">' + (idx + 1) + '</div>' : '';
-          item.innerHTML = `
-            <img src="${f.url}">
-            ${badge}
-          `;
-          rail.appendChild(item);
-        });
+      state.rawFiles = (data && data.files) ? data.files : [];
+      
+      if (state.rawFiles.length === 0) {
+        rail.innerHTML = '<div style="display:flex; align-items:center; justify-content:center; width:100%; color:var(--text-muted); font-size:0.88rem;">stitch_input 目录中暂无源图</div>';
+        return;
       }
+
+      state.rawFiles.forEach(f => {
+        const item = document.createElement('div');
+        const isSel = state.selected.includes(f.name);
+        item.className = 'thumb-item' + (isSel ? ' selected' : '');
+        item.onclick = () => toggleSelect(f.name);
+        item.setAttribute('role', 'button');
+        item.tabIndex = 0;
+        item.setAttribute('aria-label', '选择图片 ' + f.name);
+        item.onkeydown = event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            toggleSelect(f.name);
+          }
+        };
+        const idx = state.selected.indexOf(f.name);
+        const badge = idx >= 0 ? '<div class="thumb-badge">' + (idx + 1) + '</div>' : '';
+        item.innerHTML = `
+          <img src="${f.url}" loading="lazy">
+          ${badge}
+          <div class="thumb-item-name">${f.name}</div>
+        `;
+        rail.appendChild(item);
+      });
     }
 
     function toggleSelect(name) {
@@ -234,26 +607,66 @@
       loadImages();
     }
 
+    function selectAllImages() {
+      state.selected = state.rawFiles.map(f => f.name);
+      $('sel-count').textContent = state.selected.length;
+      loadImages();
+    }
+
+    function invertSelectImages() {
+      const newSel = [];
+      state.rawFiles.forEach(f => {
+        if (!state.selected.includes(f.name)) newSel.push(f.name);
+      });
+      state.selected = newSel;
+      $('sel-count').textContent = state.selected.length;
+      loadImages();
+    }
+
+    function clearSelectedImages() {
+      state.selected = [];
+      $('sel-count').textContent = '0';
+      loadImages();
+    }
+
     async function runStitch() {
-      if (state.selected.length < 2) return alert('请至少选择2张');
+      if (state.selected.length < 2) {
+        if (window.showToast) window.showToast('需要更多图片', '请至少选择 2 张相邻视角图像执行拼接', 'warning');
+        else alert('请至少选择2张');
+        return;
+      }
       $('btn-stitch').disabled = true;
-      $('btn-stitch').textContent = '拼接中...';
+      $('btn-stitch').innerHTML = `
+        <svg class="indicator-dot active" style="margin-right:6px;" viewBox="0 0 10 10"></svg>
+        <span>拼接计算中...</span>
+      `;
+      $('stage-status').textContent = '拼接处理中，请稍候...';
+
       const res = await fetchJson('/api/stitch/image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ server_files: state.selected, auto_crop: true })
       });
+
       if (res && res.result_url) {
+        if (window.showToast) window.showToast('拼接完成', `耗时 ${(res.elapsed_ms || 0).toFixed(0)} ms`, 'success');
         await showStitchResult(res.result_url, res.log_id);
       } else {
-        showStageError((res && res.msg) || '拼接失败');
+        const errMsg = (res && res.msg) || '拼接算法未收敛或特征匹配不足';
+        if (window.showToast) window.showToast('拼接未成功', errMsg, 'error');
+        showStageError(errMsg);
       }
+
       $('btn-stitch').disabled = false;
-      $('btn-stitch').textContent = '开始拼接';
+      $('btn-stitch').innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <span>开始拼接</span>
+      `;
     }
 
     async function startCam() {
       closePanorama();
+      $('stage-status').textContent = '正在启动硬件相机...';
       const res = await fetchJson('/api/camera/start', { 
         method: 'POST', 
         headers: {'Content-Type': 'application/json'},
@@ -263,38 +676,64 @@
           require_rga: true
         })
       });
+
       if (res && res.session_id) {
         state.camera.active = true;
         state.camera.sid = res.session_id;
+        state.camera.count = 0;
         $('cam-sid').textContent = res.session_id;
-        $('stage-status').textContent = 'RGA预览';
+        $('cam-count').textContent = '0';
+        $('stage-status').textContent = 'RGA 硬件直通预览中';
+        $('viewfinder-grid').style.display = 'grid';
+        $('crosshair-center').style.display = 'block';
+        $('camera-hud-tag').style.display = 'flex';
         updateActions();
         startStreamPreview();
+        if (window.showToast) window.showToast('相机启动成功', '已开启 RGA 硬件加速实时预览流', 'success');
       } else {
         showStageError((res && res.msg) || '相机启动失败');
+        if (window.showToast) window.showToast('相机启动失败', (res && res.msg) || '设备不可用', 'error');
       }
     }
 
     async function shotCam() {
       const res = await fetchJson('/api/camera/capture', { method: 'POST' });
-      if (res) {
+      if (res && res.ok) {
         state.camera.count = res.capture_count;
         $('cam-count').textContent = res.capture_count;
+        if (window.showToast) window.showToast('拍照成功', `已采集第 ${res.capture_count} 帧`, 'info', 1500);
+
+        // Flash stage feedback
+        const box = $('stage-box');
+        box.style.filter = 'brightness(1.5)';
+        setTimeout(() => box.style.filter = 'none', 120);
+      } else {
+        if (window.showToast) window.showToast('拍照失败', (res && res.msg) || '未能保存帧', 'error');
       }
     }
 
     async function stopCam() {
+      $('btn-cam-stop').disabled = true;
+      $('stage-status').textContent = '正在停止采集并合成全景...';
       const res = await fetchJson('/api/camera/stop', { 
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ auto_crop: true })
       });
       state.camera.active = false;
+      $('btn-cam-stop').disabled = false;
+      $('viewfinder-grid').style.display = 'none';
+      $('crosshair-center').style.display = 'none';
+      $('camera-hud-tag').style.display = 'none';
       updateActions();
+
       if (res && res.result_url) {
+        if (window.showToast) window.showToast('拼接成功', `用时 ${(res.elapsed_ms || 0).toFixed(0)} ms`, 'success');
         await showStitchResult(res.result_url, res.log_id);
       } else {
-        showStageError((res && res.msg) || '拼接失败');
+        const msg = (res && res.msg) || '拼接未成功';
+        if (window.showToast) window.showToast('采集停止', msg, 'warning');
+        showStageError(msg);
       }
     }
 
@@ -347,8 +786,8 @@
     function showStageError(message) {
       clearPanorama();
       $('main-preview').classList.add('hidden');
-      $('placeholder-text').textContent = '操作失败';
       $('placeholder-text').classList.remove('hidden');
+      $('placeholder-text').querySelector('span').textContent = '操作失败';
       $('stage-status').textContent = message;
     }
 
@@ -401,7 +840,7 @@
         });
         state.panoramaViewer.on('error', error => showStageError(error && error.message ? error.message : '全景图加载失败'));
         $('pano-actions').classList.remove('hidden');
-        $('stage-status').textContent = '全景展示 · 左右拖动查看';
+        $('stage-status').textContent = '全景交互展示 · 拖拽旋转查看';
       } catch (error) {
         showStageError(error && error.message ? error.message : '全景展示失败');
       }
@@ -415,10 +854,15 @@
 
     async function showResult(mode) {
       if (!state.resultUrl) return;
+      const btns = $('pano-actions').querySelectorAll('.pano-action-btn');
+      btns.forEach(b => b.classList.remove('btn-active'));
+
       if (mode === 'panorama') {
+        btns[0].classList.add('btn-active');
         await showPanorama(state.resultUrl);
         return;
       }
+      btns[1].classList.add('btn-active');
       clearPanorama();
       try {
         const config = await getViewerConfig();
@@ -428,7 +872,7 @@
         image.classList.remove('hidden');
         $('placeholder-text').classList.add('hidden');
         $('pano-actions').classList.remove('hidden');
-        $('stage-status').textContent = '拼接图像展示 · 完整画面';
+        $('stage-status').textContent = '完整平面拼合图像';
       } catch (error) {
         showStageError(error && error.message ? error.message : '拼接图像展示失败');
       }
@@ -454,7 +898,18 @@
       }
       return 'image';
     }
-    
+
+    // Sync font zoom and initial mode
+    fetchJson('/api/config/public').then(cfg => {
+      if (cfg && cfg.ui && cfg.ui.font_zoom && window.syncFontZoom) {
+        window.syncFontZoom(cfg.ui.font_zoom);
+      }
+      if (cfg && cfg.stitch && cfg.stitch.camera) {
+        const cam = cfg.stitch.camera;
+        $('cam-hud-spec').textContent = `${cam.frame_height || 1080}P · ${cam.fps || 30}FPS · ${cam.pixel_format || 'NV12'}`;
+      }
+    });
+
     setMode(getModeParam() === 'camera' ? 'camera' : 'image');
   </script>
 </body>
