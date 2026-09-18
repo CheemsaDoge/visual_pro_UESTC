@@ -13,6 +13,12 @@ KIOSK_LOG_FILE="${MYUI_KIOSK_LOG_FILE:-/tmp/myui_kiosk.log}"
 KIOSK_URL="${MYUI_KIOSK_URL:-http://127.0.0.1:18080/index.html}"
 DISABLE_KIOSK="${MYUI_DISABLE_KIOSK:-0}"
 PYTHON_BIN="${MYUI_PYTHON_BIN:-python3}"
+# Keep the kiosk close to a 480 CSS-pixel-wide touch UI.  Chromium on the
+# board otherwise treats every panel pixel as one CSS pixel, making the
+# phone-oriented controls and text unnecessarily small on a 1080px panel.
+# Override either value from the init environment when another display is used.
+MYUI_LOGICAL_WIDTH="${MYUI_LOGICAL_WIDTH:-480}"
+MYUI_DEVICE_SCALE_FACTOR="${MYUI_DEVICE_SCALE_FACTOR:-}"
 
 probe_camera_device() {
   dev="$1"
@@ -144,6 +150,25 @@ if [ -z "$BROWSER_BIN" ]; then
   exit 0
 fi
 
+if [ -z "$MYUI_DEVICE_SCALE_FACTOR" ]; then
+  FRAMEBUFFER_SIZE=""
+  for FB_SIZE_FILE in /sys/class/graphics/fb*/virtual_size; do
+    if [ -r "$FB_SIZE_FILE" ]; then
+      FRAMEBUFFER_SIZE="$(cat "$FB_SIZE_FILE" 2>/dev/null || true)"
+      [ -n "$FRAMEBUFFER_SIZE" ] && break
+    fi
+  done
+  FRAMEBUFFER_WIDTH="${FRAMEBUFFER_SIZE%%,*}"
+  case "$FRAMEBUFFER_WIDTH:$MYUI_LOGICAL_WIDTH" in
+    *[!0-9:]*|:*|*:) MYUI_DEVICE_SCALE_FACTOR="2" ;;
+    *)
+      MYUI_DEVICE_SCALE_FACTOR="$(awk -v width="$FRAMEBUFFER_WIDTH" -v logical="$MYUI_LOGICAL_WIDTH" \
+        'BEGIN { scale = width / logical; if (scale < 1) scale = 1; if (scale > 3) scale = 3; printf "%.2f", scale }')"
+      ;;
+  esac
+fi
+echo "kiosk display scale: $MYUI_DEVICE_SCALE_FACTOR (logical width: $MYUI_LOGICAL_WIDTH)"
+
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/var/run}"
 export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
@@ -177,6 +202,7 @@ nohup "$BROWSER_BIN" \
   --no-first-run \
   --disable-session-crashed-bubble \
   --user-data-dir=/tmp/myui_chrome_profile \
+  --force-device-scale-factor="$MYUI_DEVICE_SCALE_FACTOR" \
   --kiosk "$KIOSK_URL" \
   >"$KIOSK_LOG_FILE" 2>&1 </dev/null &
 

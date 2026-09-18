@@ -1,0 +1,5 @@
+# Windows/local development dependencies.
+# RGA, GStreamer, V4L2, ConnMan and RKNN are supplied by the Linux board image;
+# they are intentionally not pip dependencies.
+numpy>=1.24,<3
+opencv-python>=4.8,<5

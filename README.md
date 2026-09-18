@@ -10,6 +10,15 @@ python3 backend.py
 
 默认访问：`http://127.0.0.1:18080`
 
+### Windows 一键启动
+
+```powershell
+conda activate cv_projectforfreshman
+powershell -ExecutionPolicy Bypass -File .\start_windows.ps1
+```
+
+依赖见 `requirements.txt`，完整说明见 [docs/11_windows_local_run.md](docs/11_windows_local_run.md)。Windows 可测试静态图片拼接和全景展示；相机、RGA 和开发板 Wi-Fi 功能必须在 RK3588 上运行。
+
 ## 2. 配置文件
 
 配置文件路径：`./config.json`
@@ -114,6 +123,8 @@ MYUI_CONFIG=/path/to/config.json python3 backend.py
 `stitch.viewer.vaov` 初始设为 `60`，应在取得镜头规格或完成实测后校准。实测时，可在已知距离拍摄一面平整墙体，量出画面覆盖的竖直高度，再用 `2 × arctan(覆盖高度 / (2 × 距离))` 估算垂直视场角。
 
 Pannellum 2.5.7 的离线资源及其 MIT 许可证位于 `vendor/pannellum/`；运行时不依赖 Wi-Fi。
+
+本次部署内容、开发板启动、相机采集、拼接和全景展示的简明执行链见：[docs/10_current_delivery_and_execution_flow.md](docs/10_current_delivery_and_execution_flow.md)。
 
 ## 6. 路径建议
 

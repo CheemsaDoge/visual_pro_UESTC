@@ -8,7 +8,7 @@
     "font_size": "medium"
   },
   "stitch": {
-    "engine": "builtin",
+    "engine": "sequential",
     "script_path": "./stitch_demo.py",
     "python_bin": "python3",
     "script_timeout_sec": 180,
@@ -49,7 +49,7 @@
   },
   "accel": {
     "preprocess": "rga",
-    "geometry": "cpu",
+    "geometry": "opencl",
     "selector": "off"
   },
   "selector": {

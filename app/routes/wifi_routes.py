@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import os
-import pty
 import re
 import select
 import shlex
 import subprocess
 import time
+
+try:
+    import pty
+except ImportError:  # Windows has no PTY / termios implementation.
+    pty = None
 
 from app.routes.system_routes import run_cmd
 from app.utils.log import log
@@ -34,6 +38,8 @@ def _wifi_technology_block(raw: str) -> str:
 
 
 def get_wifi_status() -> str:
+    if pty is None:
+        return "Windows local mode (board Wi-Fi unavailable)"
     services = list_wifi_services()
     for item in services:
         if item.get("connected"):
@@ -102,6 +108,8 @@ def service_is_connected(service_id: str) -> bool:
 
 
 def scan_wifi() -> dict:
+    if pty is None:
+        return {"ok": False, "msg": "Wi-Fi management is only available on the Linux development board", "services": []}
     run_cmd("connmanctl enable wifi")
     msg = run_cmd("connmanctl scan wifi")
     time.sleep(1.0)
@@ -141,6 +149,8 @@ def set_service_autoconnect(service_id: str, enabled: bool) -> str:
 
 
 def connect_wifi(service_id: str, passphrase: str) -> dict:
+    if pty is None:
+        return {"ok": False, "msg": "Wi-Fi management is only available on the Linux development board"}
     run_cmd("connmanctl enable wifi")
     master, slave = pty.openpty()
     proc = subprocess.Popen(["connmanctl"], stdin=slave, stdout=slave, stderr=slave, close_fds=True)
@@ -204,6 +214,8 @@ def connect_wifi(service_id: str, passphrase: str) -> dict:
 
 
 def disconnect_wifi(service_id: str) -> dict:
+    if pty is None:
+        return {"ok": False, "msg": "Wi-Fi management is only available on the Linux development board"}
     service_id = (service_id or "").strip()
     if not service_id:
         return {"ok": False, "msg": "service is empty"}
