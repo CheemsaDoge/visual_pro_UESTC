@@ -1076,7 +1076,7 @@ def stop_camera_session(payload: dict) -> dict:
                 CAMERA_RUNTIME["last_result"] = copy.deepcopy(result)
         return result
 
-    stitch_result = run_image_stitch({"server_files": capture_files, "auto_crop": auto_crop})
+    stitch_result = run_image_stitch({"server_files": capture_files, "auto_crop": auto_crop, "source": "camera"})
     result = {
         "ok": stitch_result.get("ok", False),
         "msg": stitch_result.get("msg") or ("stitched" if stitch_result.get("ok") else "stitch failed"),
@@ -1089,7 +1089,7 @@ def stop_camera_session(payload: dict) -> dict:
         "error": session_error,
         "dropped_count": dropped_count,
     }
-    for key in ("result_name", "result_url", "image_count", "engine", "actual_engine"):
+    for key in ("result_name", "result_url", "image_count", "engine", "actual_engine", "log_id", "stitch_log"):
         if stitch_result.get(key) is not None:
             result[key] = stitch_result.get(key)
     with CAMERA_RUNTIME_LOCK:

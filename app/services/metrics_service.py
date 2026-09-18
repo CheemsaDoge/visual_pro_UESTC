@@ -85,6 +85,45 @@ def read_thermal() -> Dict[str, Any]:
     return {"zones": zones}
 
 
+def _read_text(path: str) -> str:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return ""
+
+
+def read_gpu() -> Dict[str, Any]:
+    """Best-effort GPU data for Linux/RK3588; empty fields mean unavailable.
+
+    The kernel exposes different devfreq attributes on different board images,
+    so this intentionally reports only values that can be read safely.
+    """
+    devices = []
+    patterns = ("/sys/class/devfreq/*", "/sys/class/devfreq/*/device")
+    seen = set()
+    for pattern in patterns:
+        for path in sorted(glob.glob(pattern)):
+            root = path[:-7] if path.endswith("/device") else path
+            if root in seen:
+                continue
+            seen.add(root)
+            name = os.path.basename(root).lower()
+            uevent = _read_text(os.path.join(root, "device", "uevent")).lower()
+            if "gpu" not in name and "mali" not in name and "gpu" not in uevent and "mali" not in uevent:
+                continue
+            item: Dict[str, Any] = {"path": root, "name": os.path.basename(root)}
+            for key in ("cur_freq", "max_freq", "min_freq", "load", "busy_time", "total_time"):
+                value = _read_text(os.path.join(root, key))
+                if value:
+                    try:
+                        item[key] = int(value)
+                    except ValueError:
+                        item[key] = value
+            devices.append(item)
+    return {"devices": devices, "available": bool(devices)}
+
+
 def snapshot(pid: int | None = None) -> Dict[str, Any]:
     return {
         "timestamp": time.time(),
@@ -92,6 +131,7 @@ def snapshot(pid: int | None = None) -> Dict[str, Any]:
         "meminfo": read_meminfo(),
         "pid_status": read_pid_status(pid),
         "thermal": read_thermal(),
+        "gpu": read_gpu(),
     }
 
 

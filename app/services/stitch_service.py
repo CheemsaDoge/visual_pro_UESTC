@@ -11,6 +11,8 @@ from typing import List, Tuple
 
 from app import config
 from app.services.geometry_service import get_geometry_engine, get_geometry_status
+from app.services.preprocess_service import get_preprocess_status
+from app.services.stitch_diagnostics import StitchDiagnostics
 from app.services.storage_service import decode_image_payload, resolve_stitch_input_files
 from app.stitch_engine.opencv_engine import OpenCVStitchEngine
 from app.stitch_engine.scans_engine import ScansStitchEngine
@@ -154,11 +156,37 @@ def run_image_stitch(payload: dict) -> dict:
 
     output_name = f"stitched_{request_id}.jpg"
     output_path = os.path.join(config.STITCH_OUTPUT_DIR, output_name)
+    source = str(payload.get("source") or "image") if isinstance(payload, dict) else "image"
+    diagnostics = StitchDiagnostics(
+        request_id,
+        source,
+        image_paths,
+        {
+            "requested_engine": config.STITCH_ENGINE,
+            "auto_crop": auto_crop,
+            "geometry": get_geometry_status(),
+            "preprocess": get_preprocess_status(),
+            "backend": get_stitch_backend_status(),
+        },
+    )
+    engine_detail = {}
+    ok = False
+    msg = "stitch engine did not return a result"
     try:
-        if config.STITCH_ENGINE == "script":
-            ok, msg = run_stitch_script(image_paths, output_path, auto_crop=auto_crop)
-        else:
-            ok, msg = stitch_image_files(image_paths, output_path, auto_crop=auto_crop)
+        with diagnostics.stage("engine_dispatch", requested_engine=config.STITCH_ENGINE):
+            if config.STITCH_ENGINE == "script":
+                ok, msg = run_stitch_script(image_paths, output_path, auto_crop=auto_crop)
+                engine_detail = {
+                    "engine": "script",
+                    "parameters": {"script_path": config.STITCH_SCRIPT, "timeout_sec": config.STITCH_SCRIPT_TIMEOUT_SEC},
+                }
+            else:
+                ok, msg = stitch_image_files(image_paths, output_path, auto_crop=auto_crop)
+                engine_detail = get_stitch_engine().get_last_run_detail()
+    except Exception as exc:
+        msg = f"stitch failed: {exc}"
+        if config.STITCH_ENGINE != "script":
+            engine_detail = get_stitch_engine().get_last_run_detail()
     finally:
         if cleanup_after_run:
             for path in image_paths:
@@ -166,8 +194,9 @@ def run_image_stitch(payload: dict) -> dict:
                     os.remove(path)
                 except Exception:
                     pass
+    report = diagnostics.finish(ok=ok, message=msg, output_path=output_path if ok else "", engine_detail=engine_detail)
     if not ok:
-        return {"ok": False, "msg": msg}
+        return {"ok": False, "msg": msg, "log_id": report["id"], "stitch_log": report}
     return {
         "ok": True,
         "msg": "stitched",
@@ -177,4 +206,6 @@ def run_image_stitch(payload: dict) -> dict:
         "result_url": f"{config.STITCH_OUTPUT_URL_PREFIX}{quote(output_name)}",
         "engine": config.STITCH_ENGINE,
         "actual_engine": get_stitch_engine().actual_name if config.STITCH_ENGINE != "script" else "script",
+        "log_id": report["id"],
+        "stitch_log": report,
     }

@@ -104,7 +104,7 @@
         <button id="btn-mode-image" class="mode-btn active" onclick="setMode('image')">图片</button>
         <button id="btn-mode-camera" class="mode-btn" onclick="setMode('camera')">相机</button>
       </div>
-      <div style="width: 40px;"></div>
+      <a href="stitch_log.html" class="back-link" style="font-size:15px;">日志</a>
     </header>
 
     <div class="preview-stage">
@@ -113,6 +113,9 @@
       <div id="panorama-viewer" class="hidden" aria-label="全景查看器"></div>
       <div id="placeholder-text" style="color: #333; font-size: 20px; font-weight: 800;">NO SIGNAL</div>
       <div id="pano-actions" class="pano-actions hidden">
+        <button class="pano-action" onclick="showResult('panorama')">展示全景图</button>
+        <button class="pano-action" onclick="showResult('image')">展示拼接图像</button>
+        <button class="pano-action" onclick="openCurrentLog()">本次日志</button>
         <button class="pano-action" onclick="closePanorama()">返回</button>
         <button class="pano-action" onclick="restartCapture()">重新拍摄</button>
       </div>
@@ -146,7 +149,9 @@
       selected: [],
       camera: { active: false, sid: '', count: 0 },
       viewerConfig: null,
-      panoramaViewer: null
+      panoramaViewer: null,
+      resultUrl: '',
+      resultLogId: ''
     };
 
     const DEFAULT_VIEWER_CONFIG = {
@@ -201,6 +206,15 @@
           const item = document.createElement('div');
           item.className = 'thumb-item' + (state.selected.includes(f.name) ? ' selected' : '');
           item.onclick = () => toggleSelect(f.name);
+          item.setAttribute('role', 'button');
+          item.tabIndex = 0;
+          item.setAttribute('aria-label', '选择图片 ' + f.name);
+          item.onkeydown = event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              toggleSelect(f.name);
+            }
+          };
           const idx = state.selected.indexOf(f.name);
           const badge = idx >= 0 ? '<div class="thumb-badge">' + (idx + 1) + '</div>' : '';
           item.innerHTML = `
@@ -230,7 +244,7 @@
         body: JSON.stringify({ server_files: state.selected, auto_crop: true })
       });
       if (res && res.result_url) {
-        await showPanorama(res.result_url);
+        await showStitchResult(res.result_url, res.log_id);
       } else {
         showStageError((res && res.msg) || '拼接失败');
       }
@@ -278,7 +292,7 @@
       state.camera.active = false;
       updateActions();
       if (res && res.result_url) {
-        await showPanorama(res.result_url);
+        await showStitchResult(res.result_url, res.log_id);
       } else {
         showStageError((res && res.msg) || '拼接失败');
       }
@@ -391,6 +405,38 @@
       } catch (error) {
         showStageError(error && error.message ? error.message : '全景展示失败');
       }
+    }
+
+    async function showStitchResult(rawUrl, logId) {
+      state.resultUrl = rawUrl;
+      state.resultLogId = logId || '';
+      await showResult('panorama');
+    }
+
+    async function showResult(mode) {
+      if (!state.resultUrl) return;
+      if (mode === 'panorama') {
+        await showPanorama(state.resultUrl);
+        return;
+      }
+      clearPanorama();
+      try {
+        const config = await getViewerConfig();
+        const imageUrl = getSafePanoramaUrl(state.resultUrl, config);
+        const image = $('main-preview');
+        image.src = imageUrl;
+        image.classList.remove('hidden');
+        $('placeholder-text').classList.add('hidden');
+        $('pano-actions').classList.remove('hidden');
+        $('stage-status').textContent = '拼接图像展示 · 完整画面';
+      } catch (error) {
+        showStageError(error && error.message ? error.message : '拼接图像展示失败');
+      }
+    }
+
+    function openCurrentLog() {
+      const suffix = state.resultLogId ? '?id=' + encodeURIComponent(state.resultLogId) : '';
+      window.location.href = 'stitch_log.html' + suffix;
     }
 
     function restartCapture() {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import List, Sequence, Tuple
 
 DEFAULT_MAX_IMAGE_WIDTH = 1920
@@ -191,15 +192,29 @@ def stitch_two_images_with_orb(
     orb_features: int = DEFAULT_ORB_FEATURES,
     match_ratio: float = DEFAULT_MATCH_RATIO,
     min_good_matches: int = DEFAULT_MIN_GOOD_MATCHES,
+    telemetry: dict | None = None,
 ):
     import numpy as np
 
+    started = time.perf_counter()
+    telemetry = telemetry if telemetry is not None else {}
+    telemetry.update({
+        "algorithm": "ORB + BFMatcher(Hamming) + Lowe ratio + RANSAC homography",
+        "parameters": {
+            "orb_features": orb_features,
+            "match_ratio": match_ratio,
+            "min_good_matches": min_good_matches,
+            "ransac_reproj_threshold": 5.0,
+        },
+    })
     gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
     orb = cv2.ORB_create(nfeatures=orb_features)
     kp1, des1 = orb.detectAndCompute(gray1, None)
     kp2, des2 = orb.detectAndCompute(gray2, None)
+    telemetry["feature_points"] = {"left": len(kp1), "right": len(kp2)}
     if des1 is None or des2 is None or len(kp1) < 8 or len(kp2) < 8:
+        telemetry["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
         return False, "not enough feature points"
 
     matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
@@ -211,13 +226,17 @@ def stitch_two_images_with_orb(
         first, second = pair
         if first.distance < match_ratio * second.distance:
             good_matches.append(first)
+    telemetry["matches"] = {"raw_knn_pairs": len(raw_matches), "good_ratio_matches": len(good_matches)}
     if len(good_matches) < min_good_matches:
+        telemetry["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
         return False, f"not enough matched points (only {len(good_matches)})"
 
     src_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
     dst_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
     homography, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+    telemetry["homography"] = {"inliers": int(mask.ravel().sum()) if mask is not None else 0}
     if homography is None or mask is None:
+        telemetry["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
         return False, "homography estimation failed"
 
     h1, w1 = img1.shape[:2]
@@ -244,13 +263,16 @@ def stitch_two_images_with_orb(
     max_dim = max(w1 + w2, h1 + h2, 1) * 4
     max_area = max(1, (w1 * h1 + w2 * h2) * 12)
     if canvas_w > max_dim or canvas_h > max_dim or canvas_w * canvas_h > max_area:
+        telemetry["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
         return False, "homography produced unreasonable canvas"
 
     transform = translation.dot(homography)
     warped_img2 = geometry_engine.warp_perspective(img2, transform, (canvas_w, canvas_h))
     if warped_img2 is None or getattr(warped_img2, "size", 0) == 0:
+        telemetry["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
         return False, "warpPerspective failed"
     if warped_img2.shape[0] != canvas_h or warped_img2.shape[1] != canvas_w:
+        telemetry["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
         return False, "geometry engine returned invalid canvas"
 
     base_canvas = np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)
@@ -267,5 +289,8 @@ def stitch_two_images_with_orb(
     if auto_crop:
         result = crop_nonzero_area(result, cv2)
         if result is None or getattr(result, "size", 0) == 0:
+            telemetry["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
             return False, "empty stitch result"
+    telemetry["canvas"] = {"width": int(result.shape[1]), "height": int(result.shape[0])}
+    telemetry["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
     return True, result

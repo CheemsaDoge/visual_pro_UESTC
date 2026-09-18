@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Tuple
+import time
 
 from app.stitch_engine.base import StitchEngine
 from app.stitch_engine.common import (
@@ -59,6 +60,14 @@ class ScansStitchEngine(StitchEngine):
         return image
 
     def stitch(self, image_paths: List[str], output_path: str, auto_crop: bool = False) -> Tuple[bool, str]:
+        detail = self._begin_run_detail(image_paths, auto_crop)
+        detail["parameters"].update({
+            "quality_threshold": self.quality_threshold,
+            "registration_resol": self.registration_resol,
+            "max_workers": self.max_workers,
+            "max_image_width": self.max_image_width,
+            "postprocess": "usm+denoise",
+        })
         try:
             import cv2
         except Exception as exc:
@@ -67,9 +76,12 @@ class ScansStitchEngine(StitchEngine):
             return False, "need at least two images"
 
         max_workers = min(self.max_workers, len(image_paths))
+        load_started = time.perf_counter()
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             images = list(executor.map(lambda path: self._load_image_with_quality(path, cv2), image_paths))
+        valid_count = sum(image is not None for image in images)
         images = [image for image in images if image is not None]
+        self._record_stage("parallel_load_preprocess_quality_filter", load_started, workers=max_workers, valid_images=valid_count, rejected_images=len(image_paths) - valid_count)
         if len(images) < 2:
             return False, "not enough valid images after quality filter"
 
@@ -82,12 +94,16 @@ class ScansStitchEngine(StitchEngine):
             pass
 
         try:
+            stitch_started = time.perf_counter()
             status, panorama = stitcher.stitch(images)
         except Exception as exc:
+            self._record_stage("opencv_scans_stitch", stitch_started, error=str(exc))
             return False, f"opencv scans stitch failed: {exc}"
+        self._record_stage("opencv_scans_stitch", stitch_started, status=int(status))
         if status != getattr(cv2, "Stitcher_OK", 0) or panorama is None or getattr(panorama, "size", 0) == 0:
             return False, f"opencv scans stitch failed ({status})"
 
+        postprocess_started = time.perf_counter()
         if auto_crop:
             panorama = smart_crop(panorama, cv2, threshold=5, margin=10)
         panorama = postprocess_image(
@@ -97,6 +113,7 @@ class ScansStitchEngine(StitchEngine):
             denoise_h=self.denoise_h,
         )
         ok = save_result_image(output_path, panorama, cv2)
+        self._record_stage("postprocess_and_save", postprocess_started, output_width=int(panorama.shape[1]), output_height=int(panorama.shape[0]), saved=bool(ok))
         return (True, "ok") if ok else (False, "failed to save result")
 
     def status(self) -> dict:
