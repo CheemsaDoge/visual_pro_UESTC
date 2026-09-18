@@ -6,147 +6,342 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>网络设置</title>
+  <title>网络设置 · STITCH</title>
+  <link rel="stylesheet" href="ui.css" />
   <style>
-    :root {
-      --bg: #0a0a0c;
-      --card-bg: #151518;
-      --accent: #ff9500;
-      --text-main: #ffffff;
-      --text-muted: #8e8e93;
-      --status-ok: #32d74b;
-      --radius: 16px;
-    }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body { 
-      margin: 0; padding: 0; width: 100%; height: 100%; 
-      background: var(--bg); color: var(--text-main);
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    .wifi-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 14px 18px;
+      max-width: 900px;
+      margin: 0 auto;
+      gap: 14px;
       overflow: hidden;
     }
-    .app-container { display: flex; flex-direction: column; height: 100vh; }
-    
-    .header {
-      display: flex; align-items: center; height: 60px; padding: 0 16px; border-bottom: 2px solid rgba(255,255,255,0.08);
-    }
-    .back-btn { text-decoration: none; color: var(--accent); font-size: 32px; margin-right: 16px; font-weight: bold; }
-    .header h2 { font-size: 22px; margin: 0; font-weight: 700; }
 
-    .status-section { padding: 16px; }
-    .status-card {
-      background: var(--card-bg); border-radius: var(--radius); padding: 20px; border: 2px solid rgba(255,255,255,0.08);
+    /* Current Status Card */
+    .status-panel {
+      background: var(--bg-surface-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      box-shadow: var(--shadow-sm);
     }
-    .status-row { display: flex; justify-content: space-between; margin-bottom: 12px; }
-    .status-row:last-child { margin-bottom: 0; }
-    .label { color: var(--text-muted); font-size: 15px; font-weight: 600; }
-    .value { font-size: 16px; font-weight: 600; color: #eee; }
-    .connected-ssid { color: var(--status-ok); font-weight: 700; }
-
-    .list-section { flex: 1; overflow-y: auto; padding: 0 16px 100px; }
-    .list-header { 
-      display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 2px solid rgba(255,255,255,0.1);
+    .status-tile {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
     }
-    .list-header span { font-size: 14px; color: var(--text-muted); font-weight: 700; }
+    .status-tile-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .status-tile-val {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .connected-ssid {
+      color: var(--accent-green-light);
+    }
 
+    /* List Area */
+    .list-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-surface-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 16px 18px;
+      box-shadow: var(--shadow-md);
+      min-height: 0;
+    }
+    .list-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .list-title {
+      font-size: 1.05rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .wifi-scroll-list {
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 4px;
+      margin-top: 8px;
+    }
+
+    /* Wi-Fi List Item */
     .wifi-item {
-      display: flex; align-items: center; justify-content: space-between; padding: 16px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      transition: all var(--trans-fast);
+      margin-bottom: 6px;
+      background: rgba(255, 255, 255, 0.02);
     }
-    .wifi-info { flex: 1; min-width: 0; padding-right: 12px; }
-    .wifi-name { font-size: 18px; font-weight: 600; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .wifi-meta { font-size: 14px; color: var(--text-muted); font-weight: 500; }
+    .wifi-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--border-subtle);
+    }
+    .wifi-item.item-connected {
+      background: rgba(16, 185, 129, 0.08);
+      border-color: rgba(16, 185, 129, 0.3);
+    }
 
-    .btn-sm {
-      padding: 10px 20px; border-radius: 20px; border: none; font-size: 15px; font-weight: 700; cursor: pointer;
+    .wifi-left-info {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex: 1;
+      min-width: 0;
     }
-    .btn-connect { background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.1); }
-    .btn-disconnect { background: rgba(255,69,58,0.2); color: #ff453a; border: 1px solid rgba(255,69,58,0.2); }
+    .wifi-icon-box {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.06);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent-orange-light);
+      flex-shrink: 0;
+    }
+    .wifi-item.item-connected .wifi-icon-box {
+      background: rgba(16, 185, 129, 0.18);
+      color: var(--accent-green-light);
+    }
 
-    .footer-actions {
-      position: absolute; bottom: 0; left: 0; right: 0; padding: 20px 16px; background: linear-gradient(to top, var(--bg) 85%, transparent);
+    .wifi-details {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
     }
-    .btn-primary {
-      width: 100%; height: 60px; border-radius: 30px; background: var(--accent); color: #000; border: none;
-      font-size: 18px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;
+    .wifi-name {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #ffffff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .wifi-meta-tags {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
     }
 
-    .modal {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: none; align-items: center; justify-content: center; padding: 24px; z-index: 100;
+    /* Buttons inside items */
+    .btn-wifi-action {
+      padding: 8px 18px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      border-radius: var(--radius-full);
+      cursor: pointer;
+      transition: all var(--trans-fast);
+      border: 1px solid var(--border-subtle);
     }
-    .modal.show { display: flex; }
-    .modal-content {
-      width: 100%; background: #1c1c1e; border-radius: 20px; padding: 24px; border: 2px solid rgba(255,255,255,0.1);
+    .btn-connect {
+      background: rgba(255, 255, 255, 0.1);
+      color: #ffffff;
     }
-    .modal h3 { margin: 0 0 16px; font-size: 22px; font-weight: 700; }
+    .btn-connect:hover {
+      background: var(--accent-blue);
+      border-color: var(--accent-blue);
+    }
+    .btn-disconnect {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+    .btn-disconnect:hover {
+      background: var(--accent-red);
+      color: #ffffff;
+    }
+
+    /* Footer Action */
+    .footer-panel {
+      padding: 4px 0;
+    }
+    .btn-scan-lg {
+      width: 100%;
+      height: 54px;
+      border-radius: var(--radius-full);
+      font-size: 1.05rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+
+    /* In-page Password Modal */
+    .pwd-input-wrap {
+      position: relative;
+      margin: 16px 0 24px;
+    }
     .pwd-input {
-      width: 100%; height: 50px; background: #2c2c2e; border: 2px solid rgba(255,255,255,0.1); border-radius: 10px;
-      padding: 0 16px; color: #fff; font-size: 18px; margin-bottom: 20px; outline: none;
+      width: 100%;
+      height: 52px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1.5px solid var(--border-medium);
+      border-radius: var(--radius-sm);
+      padding: 0 46px 0 16px;
+      color: #ffffff;
+      font-size: 1.1rem;
+      outline: none;
+      transition: border-color var(--trans-fast);
     }
-    .modal-btns { display: flex; gap: 12px; }
-    .modal-btns button { flex: 1; height: 50px; border-radius: 25px; border: none; font-weight: 700; font-size: 16px; }
-    .btn-cancel { background: #3a3a3c; color: #fff; }
-    .btn-submit { background: var(--accent); color: #000; }
+    .pwd-input:focus {
+      border-color: var(--accent-orange);
+      box-shadow: 0 0 12px var(--accent-orange-glow);
+    }
+    .toggle-pwd-btn {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+    }
   </style>
 </head>
 <body>
-  <div class="app-container">
-    <header class="header">
-      <a href="index.html" class="back-btn">←</a>
-      <h2>网络设置</h2>
+  <div class="wifi-container">
+    <!-- Header -->
+    <header class="header-bar" style="margin-bottom:0;">
+      <a href="index.html" class="header-nav-btn back-btn" title="返回首页">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        <span>首页</span>
+      </a>
+      <h2 style="margin:0; font-size:1.25rem; font-weight:800; color:#fff;">网络设置</h2>
+      <div style="width:70px;"></div>
     </header>
 
-    <div class="status-section">
-      <div class="status-card">
-        <div class="status-row">
-          <span class="label">当前连接</span>
-          <span id="wifi-status" class="value connected-ssid">读取中...</span>
-        </div>
-        <div class="status-row">
-          <span class="label">IP 地址</span>
-          <span id="ip-status" class="value">--</span>
+    <!-- Current Network Status Card -->
+    <section class="status-panel">
+      <div class="status-tile">
+        <span class="status-tile-label">当前无线连接</span>
+        <div class="status-tile-val">
+          <span class="indicator-dot" id="wifi-ind"></span>
+          <span id="wifi-status" class="connected-ssid">读取中...</span>
         </div>
       </div>
-    </div>
 
-    <div class="list-section">
-      <div class="list-header">
-        <span>可用网络</span>
-        <span id="scan-status">更新中</span>
+      <div class="status-tile">
+        <span class="status-tile-label">IP 地址</span>
+        <div class="status-tile-val">
+          <span id="ip-status" style="font-family:monospace;">--</span>
+        </div>
       </div>
-      <div id="wifi-list"></div>
-    </div>
+    </section>
 
-    <div class="footer-actions">
-      <button id="btn-scan" class="btn-primary" onclick="scanWifi()">扫描热点</button>
+    <!-- Available Wi-Fi Hotspots List -->
+    <main class="list-card">
+      <div class="list-header-row">
+        <div class="list-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+          <span>可用无线网络</span>
+        </div>
+        <span id="scan-status" class="badge badge-blue">更新中</span>
+      </div>
+
+      <div id="wifi-list" class="wifi-scroll-list"></div>
+    </main>
+
+    <!-- Scan Hotspots Button -->
+    <footer class="footer-panel">
+      <button id="btn-scan" class="btn btn-primary btn-scan-lg" onclick="scanWifi()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        <span>扫描热点</span>
+      </button>
+    </footer>
+  </div>
+
+  <!-- Password Input Modal -->
+  <div id="pwd-modal" class="modal-backdrop">
+    <div class="modal-dialog">
+      <h3 id="pwd-ssid" style="margin:0; font-size:1.3rem; font-weight:800; color:#fff;">输入密码</h3>
+      <div style="font-size:0.85rem; color:var(--text-secondary); margin-top:4px;">连接到加密无线网络</div>
+
+      <div class="pwd-input-wrap">
+        <input id="pwd-input" type="password" class="pwd-input" placeholder="输入 Wi-Fi 密码" autocomplete="off" />
+        <button type="button" class="toggle-pwd-btn" onclick="togglePasswordVisibility()" title="显示/隐藏密码">
+          <svg id="eye-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+
+      <div style="display:flex; gap:12px;">
+        <button id="btn-cancel" class="btn btn-secondary" onclick="closePwd()" style="flex:1; height:46px;">取消</button>
+        <button id="btn-submit" class="btn btn-primary" onclick="submitPwd()" style="flex:1; height:46px;">连接</button>
+      </div>
     </div>
   </div>
 
-  <div id="pwd-modal" class="modal">
-    <div class="modal-content">
-      <h3 id="pwd-ssid">输入密码</h3>
-      <input id="pwd-input" type="password" class="pwd-input" placeholder="Wi-Fi 密码" />
-      <div class="modal-btns">
-        <button class="btn-cancel" onclick="closePwd()">取消</button>
-        <button class="btn-submit" onclick="submitPwd()">连接</button>
-      </div>
-    </div>
-  </div>
-
+  <script src="ui.js"></script>
   <script>
     const $ = id => document.getElementById(id);
     let pendingService = '', pendingSsid = '';
+    const escapeHtml = value => String(value == null ? '' : value).replace(/[&<>"']/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[char]));
 
     async function fetchJson(url, options = {}) {
       try {
         options.cache = 'no-store';
         const resp = await fetch(url, options);
         return await resp.json();
-      } catch (e) { return { ok: false, msg: '网络错误' }; }
+      } catch (e) {
+        return { ok: false, msg: '网络或服务错误' };
+      }
     }
 
     async function updateStatus() {
       const data = await fetchJson('/api/status');
       if (data) {
-        $('wifi-status').textContent = data.wifi || '未连接';
+        const wifiText = data.wifi || '未连接';
+        $('wifi-status').textContent = wifiText;
+        const isConnected = wifiText.includes('connected');
+        $('wifi-ind').className = 'indicator-dot ' + (isConnected ? 'active' : '');
+
         $('ip-status').textContent = (data.ip_list && data.ip_list.length > 0) ? data.ip_list[0].ip : (data.ip || '--');
       }
     }
@@ -154,14 +349,22 @@
     async function scanWifi() {
       const btn = $('btn-scan');
       btn.disabled = true;
-      btn.textContent = '扫描中...';
+      btn.innerHTML = `
+        <svg class="indicator-dot active" style="margin-right:6px;" viewBox="0 0 10 10"></svg>
+        <span>正在扫描周边热点...</span>
+      `;
       $('scan-status').textContent = '正在扫描...';
-      
+
+      if (window.showToast) window.showToast('无线扫描', '正在通过 ConnMan 扫描周边 Wi-Fi 信号...', 'info', 2000);
+
       const data = await fetchJson('/api/wifi/scan', { method: 'POST' });
       renderList(data.services || []);
-      
+
       btn.disabled = false;
-      btn.textContent = '扫描热点';
+      btn.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        <span>扫描热点</span>
+      `;
       $('scan-status').textContent = '已更新';
       updateStatus();
     }
@@ -176,22 +379,50 @@
       const box = $('wifi-list');
       box.innerHTML = '';
       if (!services || services.length === 0) {
-        box.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-muted); font-size:16px;">未发现热点</div>';
+        box.innerHTML = `
+          <div style="text-align:center; padding:36px 16px; color:var(--text-muted); font-size:0.95rem;">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:8px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <div>未发现无线热点，请尝试点击下方“扫描热点”</div>
+          </div>
+        `;
         return;
       }
 
       services.forEach(item => {
         const div = document.createElement('div');
-        div.className = 'wifi-item';
+        div.className = 'wifi-item' + (item.connected ? ' item-connected' : '');
+        const displayName = escapeHtml(item.name || '(隐藏网络)');
+
+        const isLocked = item.security !== 'open';
+        const lockIcon = isLocked ? `
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        ` : `
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+        `;
+
         div.innerHTML = `
-          <div class="wifi-info">
-            <div class="wifi-name">${item.name || '(隐藏)'}</div>
-            <div class="wifi-meta">${item.security === 'open' ? '开放' : '加密'} • ${item.online ? '在线' : '离线'}</div>
+          <div class="wifi-left-info">
+            <div class="wifi-icon-box">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+            </div>
+            <div class="wifi-details">
+              <div class="wifi-name">${displayName}</div>
+              <div class="wifi-meta-tags">
+                <span style="display:inline-flex; align-items:center; gap:3px;">
+                  ${lockIcon}
+                  ${item.security === 'open' ? '开放' : '加密'}
+                </span>
+                <span>•</span>
+                <span>${item.online ? '可联网' : '内网'}</span>
+                ${item.connected ? '<span class="badge badge-green" style="padding:2px 8px; font-size:0.7rem;">当前已连接</span>' : ''}
+              </div>
+            </div>
           </div>
-          <button class="btn-sm ${item.connected ? 'btn-disconnect' : 'btn-connect'}" type="button">
+          <button class="btn-wifi-action ${item.connected ? 'btn-disconnect' : 'btn-connect'}" type="button">
             ${item.connected ? '断开' : '连接'}
           </button>
         `;
+
         const btn = div.querySelector('button');
         btn.onclick = () => {
           if (item.connected) disconnect(item.service);
@@ -207,14 +438,33 @@
       } else {
         pendingService = service;
         pendingSsid = ssid;
-        $('pwd-ssid').textContent = ssid;
+        $('pwd-ssid').textContent = ssid || '输入密码';
         $('pwd-input').value = '';
         $('pwd-modal').classList.add('show');
-        $('pwd-input').focus();
+        setTimeout(() => $('pwd-input').focus(), 100);
       }
     }
 
-    function closePwd() { $('pwd-modal').classList.remove('show'); }
+    function closePwd() {
+      $('pwd-modal').classList.remove('show');
+    }
+
+    function togglePasswordVisibility() {
+      const input = $('pwd-input');
+      const isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      const eye = $('eye-icon');
+      if (isPassword) {
+        eye.innerHTML = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+      } else {
+        eye.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+      }
+    }
+
+    // Submit password on Enter key
+    $('pwd-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submitPwd();
+    });
 
     async function submitPwd() {
       const pwd = $('pwd-input').value;
@@ -224,23 +474,49 @@
 
     async function doConnect(service, passphrase) {
       $('scan-status').textContent = '正在连接...';
+      if (window.showToast) window.showToast('正在认证', '已向 ConnMan 发送连接请求，请稍候...', 'info');
+
       const data = await fetchJson('/api/wifi/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ service, passphrase })
       });
-      alert(data.ok ? '连接请求已发出' : '连接失败: ' + data.msg);
-      setTimeout(refreshList, 3000);
+
+      if (data && data.ok) {
+        if (window.showToast) window.showToast('连接成功', 'Wi-Fi 已成功连接并自动保存配置', 'success');
+      } else {
+        const errMsg = (data && data.msg) || '密码错误或网络超时';
+        if (window.showToast) window.showToast('连接失败', errMsg, 'error');
+        else alert('连接失败: ' + errMsg);
+      }
+      setTimeout(refreshList, 2500);
     }
 
     async function disconnect(service) {
-      if (!confirm('确定断开连接？')) return;
-      const data = await fetchJson('/api/wifi/disconnect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ service })
-      });
-      setTimeout(refreshList, 2000);
+      const handleAction = async () => {
+        if (window.showToast) window.showToast('断开连接', '正在断开当前网络...', 'warning');
+        const data = await fetchJson('/api/wifi/disconnect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ service })
+        });
+        if (data && data.ok) {
+          if (window.showToast) window.showToast('已断开', 'Wi-Fi 已断开连接', 'info');
+        }
+        setTimeout(refreshList, 1500);
+      };
+
+      if (window.showConfirmDialog) {
+        window.showConfirmDialog({
+          title: '断开 Wi-Fi 连接',
+          message: '确定断开当前连接的无线网络吗？板端可能会与局域网暂时脱开。',
+          confirmText: '断开',
+          danger: true,
+          onConfirm: handleAction
+        });
+      } else {
+        if (confirm('确定断开连接？')) handleAction();
+      }
     }
 
     refreshList();
