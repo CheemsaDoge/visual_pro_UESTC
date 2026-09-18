@@ -16,6 +16,8 @@
 
 ## 已完成
 
+- 2026-09-18 拼接性能更新：针对 RK3588 的两张 2560×1920 输入，先前诊断为 42.0 秒，主因是 CPU `fastNlMeansDenoisingColored`；现已改为超过 `postprocess_denoise_max_pixels` 时跳过该操作，并把线性融合与 USM 锐化优先交给 Mali-G610 的 direct OpenCL kernel。实测为 1.43 秒，诊断显示 `blend=linear_opencl`、`sharpen=opencl`。本次继续将 `preprocess_max_pixels=1500000` 以上的输入跳过 CPU 双边滤波，且将 ORB 匹配限制在 `orb_match_max_width=960` 的副本上；匹配坐标会还原到 1920 宽的工作图，因此不会降低输出几何分辨率。ORB/BFMatcher/RANSAC 仍为 CPU，因为板端 OpenCV 4.5.4 的 `haveOpenCL=False`，没有可用 GPU 特征匹配后端。
+
 - `backend.py` 已变薄，只保留 HTTP transport、静态文件、MJPEG/单帧 JPEG 响应，路由通过 `GET_ROUTES`/`POST_ROUTES` 元组分发。
 - 模块目录已建立：
   - `app/config.py`、`app/schemas.py`

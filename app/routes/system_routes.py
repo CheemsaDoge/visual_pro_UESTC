@@ -147,6 +147,8 @@ def get_public_config() -> dict:
             "max_canvas_pixels": config.MAX_STITCH_CANVAS_PIXELS,
             "multiband_max_canvas_pixels": config.MULTIBAND_MAX_STITCH_CANVAS_PIXELS,
             "postprocess_denoise_max_pixels": config.MAX_STITCH_DENOISE_PIXELS,
+            "preprocess_max_pixels": config.MAX_STITCH_PREPROCESS_PIXELS,
+            "orb_match_max_width": config.STITCH_ORB_MATCH_MAX_WIDTH,
             "viewer": {
                 "library": "pannellum",
                 "version": "2.5.7",

@@ -82,6 +82,9 @@ def resize_image_if_needed(image, cv2, max_width: int = DEFAULT_MAX_IMAGE_WIDTH)
 
 
 def preprocess_image(image, cv2):
+    pixels = int(image.shape[0] * image.shape[1])
+    if pixels > config.MAX_STITCH_PREPROCESS_PIXELS:
+        return image
     return cv2.bilateralFilter(image, 5, 50, 50)
 
 
@@ -263,8 +266,19 @@ def stitch_two_images_with_orb(
             "ransac_reproj_threshold": 5.0,
         },
     })
-    gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
-    gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+    h1, w1 = img1.shape[:2]
+    h2, w2 = img2.shape[:2]
+    match_img1, _ = resize_image_if_needed(img1, cv2, max_width=config.STITCH_ORB_MATCH_MAX_WIDTH)
+    match_img2, _ = resize_image_if_needed(img2, cv2, max_width=config.STITCH_ORB_MATCH_MAX_WIDTH)
+    match_scale1 = (match_img1.shape[1] / float(w1), match_img1.shape[0] / float(h1))
+    match_scale2 = (match_img2.shape[1] / float(w2), match_img2.shape[0] / float(h2))
+    telemetry["match_images"] = {
+        "max_width": config.STITCH_ORB_MATCH_MAX_WIDTH,
+        "left": {"width": int(match_img1.shape[1]), "height": int(match_img1.shape[0]), "scale": match_scale1[0]},
+        "right": {"width": int(match_img2.shape[1]), "height": int(match_img2.shape[0]), "scale": match_scale2[0]},
+    }
+    gray1 = cv2.cvtColor(match_img1, cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(match_img2, cv2.COLOR_BGR2GRAY)
     orb = cv2.ORB_create(nfeatures=orb_features)
     kp1, des1 = orb.detectAndCompute(gray1, None)
     kp2, des2 = orb.detectAndCompute(gray2, None)
@@ -287,16 +301,20 @@ def stitch_two_images_with_orb(
         telemetry["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
         return False, f"not enough matched points (only {len(good_matches)})"
 
-    src_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-    dst_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+    src_pts = np.float32([
+        (kp2[m.trainIdx].pt[0] / match_scale2[0], kp2[m.trainIdx].pt[1] / match_scale2[1])
+        for m in good_matches
+    ]).reshape(-1, 1, 2)
+    dst_pts = np.float32([
+        (kp1[m.queryIdx].pt[0] / match_scale1[0], kp1[m.queryIdx].pt[1] / match_scale1[1])
+        for m in good_matches
+    ]).reshape(-1, 1, 2)
     homography, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
     telemetry["homography"] = {"inliers": int(mask.ravel().sum()) if mask is not None else 0}
     if homography is None or mask is None:
         telemetry["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
         return False, "homography estimation failed"
 
-    h1, w1 = img1.shape[:2]
-    h2, w2 = img2.shape[:2]
     img1_corners = np.float32([[0, 0], [w1, 0], [w1, h1], [0, h1]]).reshape(-1, 1, 2)
     img2_corners = np.float32([[0, 0], [w2, 0], [w2, h2], [0, h2]]).reshape(-1, 1, 2)
     warped_img2_corners = cv2.perspectiveTransform(img2_corners, homography)

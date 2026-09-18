@@ -51,6 +51,25 @@ def create_overlap_triplet(tmpdir):
 
 
 class OpenCVStitchEngineTest(unittest.TestCase):
+    def test_orb_match_downscale_keeps_full_resolution_result(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p1, p2 = create_overlap_pair(tmpdir)
+            left = cv2.imread(p1)
+            right = cv2.imread(p2)
+            left = cv2.resize(left, (1400, 1200), interpolation=cv2.INTER_LINEAR)
+            right = cv2.resize(right, (1400, 1200), interpolation=cv2.INTER_LINEAR)
+            cv2.imwrite(p1, left)
+            cv2.imwrite(p2, right)
+            output = os.path.join(tmpdir, "out_downscaled_match.jpg")
+            engine = SequentialPanoEngine()
+            ok, message = engine.stitch([p1, p2], output, auto_crop=True)
+            self.assertTrue(ok, message)
+            detail = engine.get_last_run_detail()
+            pair_stage = next(stage for stage in detail["stages"] if stage["name"] == "pairwise_orb")
+            self.assertEqual(pair_stage["match_images"]["max_width"], 960)
+            self.assertEqual(pair_stage["match_images"]["left"]["width"], 960)
+            self.assertGreater(pair_stage["canvas"]["width"], 960)
+
     def test_large_postprocess_skips_expensive_denoise(self):
         class FastCv:
             @staticmethod

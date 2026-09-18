@@ -84,6 +84,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_canvas_pixels": 8000000,
         "multiband_max_canvas_pixels": 3000000,
         "postprocess_denoise_max_pixels": 1500000,
+        "preprocess_max_pixels": 1500000,
+        "orb_match_max_width": 960,
         "viewer": {
             "haov": 360,
             "vaov": 60,
@@ -366,6 +368,18 @@ MAX_STITCH_DENOISE_PIXELS = safe_int(
     1_500_000,
     min_value=0,
     max_value=16_000_000,
+)
+MAX_STITCH_PREPROCESS_PIXELS = safe_int(
+    STITCH_CONFIG.get("preprocess_max_pixels", 1_500_000),
+    1_500_000,
+    min_value=0,
+    max_value=16_000_000,
+)
+STITCH_ORB_MATCH_MAX_WIDTH = safe_int(
+    STITCH_CONFIG.get("orb_match_max_width", 960),
+    960,
+    min_value=320,
+    max_value=1920,
 )
 
 PANORAMA_HAOV = safe_float(PANORAMA_VIEWER_CONFIG.get("haov", 360), 360, min_value=1.0, max_value=360.0)
