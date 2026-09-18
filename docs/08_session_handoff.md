@@ -1,51 +1,57 @@
 # 08 新会话交接
 
+> 头部四节（一页概括 / 当前架构 / 当前成果 / 当前问题）已于 2026-09-18 按代码重新核对。下面带日期标题的章节是历史时间线，保留原样，不代表当前状态。
+
 ## 一页概括
 
-这是 RK3588 图像拼接 GUI 项目。当前主线是 **RGA first → GPU next → NPU later**。本轮已把原来大一统 `backend.py` 拆成模块化后端，并建立预处理、几何、关键帧选择、拼接四类可插拔引擎。
+这是 RK3588 图像拼接 GUI 项目。主线是 **RGA first → GPU next → NPU later**。`backend.py` 已经是薄 HTTP 入口（227 行），核心在 `app/`，预处理、几何、关键帧选择、拼接四类引擎都可插拔并带 fallback。
 
-## 当前目标
-
-先保证可运行的模块化结构，然后把 RGA 真实接入到预处理链路：NV12→BGR、resize、rotate、preview。本轮已完成 “最小 wrapper 源码 + Python ctypes + CPU fallback” 的工程接入，下一步等板端资源补齐后验证 `rga_active`。
+当前阶段位置：RGA 已真实生效，direct OpenCL 只覆盖 `warpPerspective`，NPU 仍是占位。
 
 ## 当前架构
 
-- `backend.py`：薄 HTTP 入口。
-- `app/config.py`：配置默认值和兼容常量。
-- `app/services/camera_service.py`：相机启动、预览、拍照、停止、自动保存。
-- `app/preprocess/`：CPU/RGA 预处理引擎。
-- `app/geometry/`：CPU/OpenCL 几何引擎。
-- `app/selector/`：off/cpu_basic/rknn 关键帧选择。
-- `app/stitch_engine/`：OpenCV/Sequential 拼接引擎。
-- `tests/benchmark/run_benchmark.py`：benchmark 初版。
+```text
+backend.py                 227 行，HTTP + 静态 + MJPEG/单帧预览
+app/config.py              471 行，config.json 加载与常量导出
+app/schemas.py             FramePacket / ProcessedFrame
+app/routes/                camera(49) / stitch(38) / system(212) / wifi(258)
+app/services/              camera(1114) / stitch(180) / storage(141) / metrics(137)
+                           + geometry / preprocess / keyframe 三个单例工厂
+app/capture/               gst_capture / gst_raw_nv12_capture(427) / v4l2_capture(151)
+app/preprocess/            cpu_engine(162) / rga_engine(569)
+app/geometry/              cpu_geometry / opencl_geometry(81) / opencl_runtime(505)
+app/selector/              off / cpu_selector(148) / rknn_selector
+app/stitch_engine/         common(271) / opencv(111) / sequential(101) / scans(118)
+native/rga/                myui_rga.cpp + .h + Makefile + 已构建的 libmyui_rga.so
+tests/                     unit 11 条 + integration 1 条 + smoke 4 脚本 + benchmark
+vendor/pannellum/          离线 Pannellum 2.5.7
+```
 
 ## 当前成果
 
-- API 路径基本兼容旧前端。
-- 相机预览/保存统一走 `PreprocessEngine`。
-- 自动拍摄改为 selector 先判断，再保存。
-- RGA/OpenCL/RKNN/Sequential 都有接口和 fallback。
-- RGA 已新增 `native/rga/myui_rga.cpp`、`myui_rga.h`、`Makefile`，并在 `RgaPreprocessEngine` 中通过 `ctypes` 加载 `libmyui_rga.so`。
-- `RgaPreprocessEngine` 会记录 wrapper 候选路径、`lib_version`、active/fallback 调用计数，并在 native 调用前校验 NV12 尺寸和数据长度。
-- benchmark 已能明确输出 `preprocess_mode`、`preprocess_actual`、`preprocess_reason`、`rga_wrapper_available`、`rga_active_calls`、`rga_fallback_calls`，并支持 `--feed-format nv12`、`--skip-stitch`、`--rga-lib` 与 `--require-rga`。
-- `docs/` 文档体系已建立。
-- 2026-05-08 已在开发机通过 `py_compile`、4 条 unittest、CPU benchmark smoke 和基础 HTTP API smoke。
-- 2026-05-08 RGA 增量后，开发机 `python3 -m unittest discover tests` 为 5 条测试通过。
-- 2026-05-08 已部署到 RK3588 `/userdata/myui`，备份旧版本到 `/userdata/myui_backup_modular_20260508_165930`。
-- 板端已通过 py_compile、API smoke、CPU benchmark smoke、相机 start/status/capture/stop smoke。
-- 板端 RGA 增量 smoke 已通过：`py_compile` 通过，`tests.unit.test_preprocess` 2 条通过，普通 RGA benchmark 输出 `rga_fallback_cpu`，`--require-rga` 在缺 wrapper 时返回退出码 `3`。
-- 启动项已确认：`/etc/init.d/S51myui -> /userdata/myui/start_myui.sh -> /userdata/myui/backend.py`，restart 后 `myui python running`，Chromium kiosk 指向 `http://127.0.0.1:18080/index.html`。
+- API 路径兼容旧前端，完整清单见 `docs/04_api_compatibility.md`。
+- 相机预览/保存统一走 `PreprocessEngine`；采集线程与预览编码线程分离，预览按 `preview_fps` 节流。
+- 自动拍摄先 selector 判断再保存，丢弃帧计入 `dropped_count`。
+- RGA：`native/rga/libmyui_rga.so` 已交叉编译产出并在板端验证 `rga_active`；`RgaPreprocessEngine` 记录 wrapper 候选路径、`lib_version`、active/fallback 计数、native 错误与分项耗时，并在 native 调用前校验 NV12 尺寸与数据长度。native 侧导出 7 个 C 符号（含 strided 旋转与 BGRX 诊断接口）。
+- OpenCL：`app/geometry/opencl_runtime.py` 用 `ctypes -> libOpenCL.so` 直接建 context/queue/program/kernel，`warp_perspective()` 有真实 GPU 路径，板端对比 `cv2.warpPerspective` 的 `max_abs_diff=0`。
+- 拼接：四种引擎均已实现（`builtin` / `sequential` / `scans` / `script`），`sequential` 是当前 `config.json` 的生效值。
+- benchmark 输出 `preprocess_mode`、`preprocess_actual`、`preprocess_reason`、`rga_wrapper_available`、`rga_active_calls`、`rga_fallback_calls`、`geometry_mode`、`selector_mode`、`stitch_mode` 及 CPU/内存/温度快照，支持 `--feed-format`、`--skip-stitch`、`--rga-lib`、`--require-rga`。
+- 相机节点动态化：`/dev/video-camera0` 别名 + `start_myui.sh` 出帧探测 + 多候选打开，不再硬编码 `/dev/video44`。
+- 启动链已验证：`/etc/init.d/S51myui -> /userdata/myui/start_myui.sh -> /userdata/myui/backend.py`，重启后 `myui python running`，Chromium kiosk 指向 `http://127.0.0.1:18080/index.html`。
+- 2026-09-18 本地复核：全量 `py_compile` 通过；`tests.unit.test_opencl_geometry` 4 条通过；其余 4 个测试模块因当前环境缺 `cv2` 而导入失败。
 
 ## 当前问题
 
-- RGA Python/librga wrapper 接口已写好，但当前板端未编译出 `libmyui_rga.so`，因此仍是 `rga_fallback_cpu`。
-- 板端 RGA runtime 存在：`/dev/rga` 和 `librga.so` 均可见；但缺 `im2d.h`/`RgaApi.h` 和 `cc/gcc/g++`。
-- 新镜像的原生 OpenCL runtime 已可枚举：`ARM Platform / Mali-G610 r0p0`。
-- 但板端 OpenCV OpenCL 检测仍不可用：`haveOpenCL=False`，`useOpenCL=False`。
-- `OpenCLGeometryEngine` 已不再是 placeholder：`warpPerspective` 可走 direct OpenCL，`remap` 仍 fallback CPU。
-- 当前 direct OpenCL 几何路径只在 `OpenCVStitchEngine` 的 ORB fallback 路径直接生效；主 `cv2.Stitcher` 成功时不会自动经过它。
-- 当前捕获进 Python 的帧仍多为 BGR；真实 RGA 提速需要更早拿到 NV12 buffer。
-- `SequentialPanoEngine` 和 `RknnSelector` 仍是占位。
+- `OpenCLGeometryEngine.remap()` 没有 GPU 实现，每次调用只累加 `remap_fallback_calls` 并转给 CPU。
+- 几何层只在 `common.stitch_two_images_with_orb()` 被直接调用（`builtin` 两图 fallback + `sequential` 每一步）。主 `cv2.Stitcher` 成功时绕过 GPU；`ScansStitchEngine` 完全不接几何引擎。
+- 板端 OpenCV 4.5.4 仍 `haveOpenCL=False` / `useOpenCL=False`，所以不要用 `cv2.ocl` 判断本项目的 GPU 状态。
+- 1920x1080 的 90/270 旋转仍由 CPU 补做，原因是 librga 要求 BGR888 width stride 16 对齐（`1080` 不合法，`1088` 可以）。状态里以 `rga_transform=convert_only_cpu_rotate` / `convert_resize_only_cpu_rotate` + `post_rotate_cpu=True` 显式标记。
+- 板端缺 `im2d.h`/`RgaApi.h` 和 `g++`，不能在板上重编 wrapper，只能同步 PC 侧构建产物。
+- `RknnSelector` 仍是占位，直接委托 `CpuSelector`。
+- `config.json` 与 `app/config.py:DEFAULT_CONFIG` 在 `stitch.engine`、`accel.geometry`、`camera.preview_fps` 上不一致，读默认值时容易出错。
+- 12 条测试里 8 条硬依赖 `cv2`，没有 skip 保护，缺 OpenCV 的环境会直接报导入错误。
+- `/dev/video31`（第二路 sensor / `rkisp1`）仍不可用，属于板级 DTS/供电/复位/连接问题，不是本仓库能修的范围。
+- `/api/stitch/output-clear` 后端已实现，但三个前端页面都没有调用入口。
 
 
 ## RGA 下一轮实现路线
@@ -82,29 +88,34 @@ find /usr/include -iname '*rga*' -o -iname 'im2d.h' -o -iname 'RgaApi.h'
 
 ## 下一个最合理动作
 
-若在本地继续，先跑：
+若在本地继续（Windows 或开发机）：
 
 ```bash
-PYTHONPYCACHEPREFIX=/tmp/myui_pycache python3 -m py_compile backend.py stitch_demo.py $(find app tests -name '*.py')
-python3 -m unittest discover tests
-python3 tests/benchmark/run_benchmark.py --preprocess rga --selector off --feed-format nv12 --skip-stitch --output-json /tmp/benchmark_rga.json
-python3 backend.py
+python3 -m py_compile backend.py stitch_demo.py $(find app tests -name '*.py')
+python3 -m pip install -r requirements.txt          # 缺 cv2 时必须先装，否则 8 条测试导入失败
+python3 -m unittest discover tests                  # 目标是 12 条全绿
+python3 backend.py                                  # 然后浏览器打开 http://127.0.0.1:18080
 ```
 
-然后在 RK3588 真机上烟测相机 API 和手动拍照/拼接流程。
+本地能覆盖：三个页面、全部 JSON 接口、静态图片拼接、Pannellum 展示。本地不能覆盖：相机、RGA、OpenCL、Wi-Fi，这些会自动降级成 fallback，不要当成缺陷。
 
-若在板端继续，下一步最合理动作是先编译/部署 RGA wrapper：
+若在板端继续：
 
 ```bash
-cd /userdata/myui/native/rga
-make probe
-make
-make test-load
-python3 tests/benchmark/run_benchmark.py --preprocess rga --selector off --feed-format nv12 --skip-stitch --output-json /tmp/benchmark_rga.json
+cd /userdata/myui
+make py-check
+python3 tests/smoke/test_camera_api_rga_smoke.py --capture-backend gst_nv12_raw --require-rga --captures 2
 python3 tests/benchmark/run_benchmark.py --preprocess rga --selector off --feed-format nv12 --skip-stitch --require-rga --output-json /tmp/benchmark_rga_require.json
+/etc/init.d/S51myui restart
 ```
 
-如果仍缺 headers/compiler，就保持 `rga_fallback_cpu` 并记录依赖缺口；不要写假 RGA。之后再手动拍 2 张以上真实相机图，验证停止后的拼接输出。
+验收标准：`last_frame_format=NV12`、`preview.preprocess_mode=rga_active`、`save.preprocess_mode=rga_active`、`rga_fallback_calls=0`，以及 `require-rga` benchmark 退出码 `0`。
+
+按代码现状，最有价值的下一步是补 `OpenCLGeometryEngine.remap()` 的 direct OpenCL 实现，并扩大 `GeometryEngine` 在真实拼接路径中的调用面。详见 `docs/07_next_steps.md` 的「当前最该做的事」。
+
+## 板端文件同步
+
+网络可用时优先 Wi-Fi + `scp`（见 `AGENTS.md` 中的 devboard skill 包与 `docs/06_pitfalls_and_findings.md` 的 2026-05-18 记录）。网络不可用时回退串口，工具在 `tools/serial/` 下。
 
 ## 串口同步要求
 
@@ -120,13 +131,26 @@ python3 tests/benchmark/run_benchmark.py --preprocess rga --selector off --feed-
 
 ```text
 请接手 RK3588 图像拼接 GUI 项目。当前目录是 GUI/。
-已完成模块化重构：backend.py 是薄 HTTP 入口，核心在 app/。
+backend.py 是薄 HTTP 入口（227 行），核心在 app/，四类引擎可插拔且都有 fallback。
 主线必须保持 RGA first → GPU next → NPU later。
-当前 RGA/OpenCL/RKNN 都只做接口和 fallback，不要假设 GPU/UMat 可用。
-请先阅读 docs/00_project_overview.md、01_current_status.md、02_architecture.md、06_pitfalls_and_findings.md、08_session_handoff.md。
-模块化版本已部署到 RK3588 /userdata/myui，旧版备份在 /userdata/myui_backup_modular_20260508_165930。
-启动项已确认是 /etc/init.d/S51myui -> /userdata/myui/start_myui.sh -> /userdata/myui/backend.py。
-下一步优先在目标板手动拍 2 张以上真实图片并验证停止后的拼接输出，然后验证 selector=cpu_basic 自动拍摄策略。
+
+当前真实状态：
+- RGA 已生效：native/rga/libmyui_rga.so 已构建，板端验证过 rga_active。
+  1920x1080 的 90/270 旋转仍由 CPU 补做（librga 要求 BGR888 stride 16 对齐）。
+- OpenCL 只覆盖 warpPerspective（ctypes -> libOpenCL.so，不是 cv2.ocl）；remap 仍是 CPU。
+  几何层只在 ORB 路径被调用，cv2.Stitcher 成功时会绕过它。
+- RknnSelector 仍是占位，直接委托 CpuSelector。
+- config.json 生效值：stitch.engine=sequential、accel.preprocess=rga、accel.geometry=opencl、accel.selector=off。
+  注意 app/config.py 的 DEFAULT_CONFIG 与之不同（builtin / cpu），只在配置缺字段时生效。
+- 相机节点用动态别名 /dev/video-camera0，不要假设 /dev/video44 存在。
+
+请先阅读 docs/00_project_overview.md、01_current_status.md、02_architecture.md、
+03_config_and_run.md、04_api_compatibility.md、07_next_steps.md、08_session_handoff.md。
+docs 里带日期标题的章节是历史时间线，不代表当前状态。
+
+部署路径是 RK3588 /userdata/myui，启动链是
+/etc/init.d/S51myui -> /userdata/myui/start_myui.sh -> /userdata/myui/backend.py。
+下一步优先补 OpenCLGeometryEngine.remap() 并扩大 GeometryEngine 的调用面。
 ```
 
 ## 2026-05-08 RGA 交叉编译交接更新
@@ -589,6 +613,8 @@ Later same-day board-level sensor tests also tightened the limit of what softwar
   - the remaining broken `rkisp1` / `/dev/video31` path now looks like board DTS / power / reset / sensor-module / connection work outside this GUI repo
 
 ## 2026-05-12 handoff: OpenCL recheck on the new board image
+
+> The "placeholder" statement in this section was superseded by the 2026-05-13 section below. Kept as a timeline record only.
 
 User asked to re-test whether the teammate's newly flashed image can finally use OpenCL.
 

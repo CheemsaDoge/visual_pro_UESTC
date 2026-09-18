@@ -1,44 +1,79 @@
 # 07 下一步计划
 
-最近更新：2026-05-13
+最近更新：2026-09-18（按当前代码重新核对）
 
-## 当前正在做什么
+## 已经完成、不要重做
 
-已完成模块化重构初版和引擎边界落位。开发机基础验证已通过；2026-05-08 已在 RK3588 真机完成部署、API、benchmark、相机手动采集、启动项 smoke。本轮已新增 RGA 最小 wrapper 源码和 Python `ctypes` 接入，但板端缺 `im2d.h`/`RgaApi.h` 与编译器，暂未验证 `rga_active`。当前应优先继续：
+按当前代码核对，下面这些历史 TODO 已经完成，后续章节里同名条目属于时间线记录，不要再当成待办：
 
-1. 补齐或交叉编译 `native/rga/libmyui_rga.so` 所需开发资源。
-2. 在板端编译并加载 wrapper，先用固定 NV12 样例验证 `NV12 -> BGR`。
-3. 跑 `--preprocess rga --feed-format nv12 --skip-stitch` 的板端 benchmark，确认 `rga_active` 或准确 fallback 原因；生产验收时追加 `--require-rga`。
-4. 在真机 UI 上人工确认三个页面的按钮流程。
-5. 用手动模式连续拍 2 张以上，验证停止后真实相机图片拼接结果。
+- 模块化重构与四类引擎边界（preprocess / geometry / selector / stitch）。
+- `native/rga/libmyui_rga.so` 的交叉编译与 Python `ctypes` 接入；仓库内已有构建产物。
+- 真实相机 raw NV12 采集：`gst_nv12_raw`、`v4l2ctl_nv12_raw`，以及 `auto_raw` 自动择优。
+- `FramePacket` 的 stride/buffer 元数据，以及 `/api/camera/status` 中 preview/save 的分项耗时字段。
+- `OpenCLGeometryEngine` 的 direct OpenCL `warpPerspective`（`ctypes -> libOpenCL.so`，不依赖 `cv2.ocl`）。
+- `SequentialPanoEngine` 的顺序两两 ORB 拼接与 `OpenCVStitchEngine` fallback。
+- `ScansStitchEngine`（OpenCV SCANS + 质量过滤 + `registration_resol=0.6`）。
+- 相机节点动态化：`/dev/video-camera0` 别名 + `start_myui.sh` 出帧探测 + 多候选打开。
+- `/etc/init.d/S51myui` 开机启动链路修复与验证。
 
-## 下一步做什么
+## 当前最该做的事
 
-1. 在 RK3588 上补充/复测 benchmark：
-   - `--preprocess cpu --selector off`
-   - `--preprocess rga --selector off --skip-stitch`，确认 `rga_active` 或 `rga_fallback_cpu`
-   - `--preprocess rga --selector off --feed-format nv12 --skip-stitch --require-rga`，确认没有真实 RGA 时会失败、真实 RGA 时才通过
-   - `--preprocess cpu --selector cpu_basic`
-2. 接 RGA 最小真实链路：先 `NV12 -> BGR`，再扩展 resize/rotate。
-3. 把 V4L2/GStreamer 捕获中的原始 NV12 buffer 更早传入 `FramePacket`，减少 Python 侧重复转换。
-4. 给 `/api/camera/status` 或日志增加更细的预处理耗时统计。
+1. **补 `OpenCLGeometryEngine.remap()` 的 direct OpenCL 实现。** 现在每次调用都只累加 `remap_fallback_calls` 并转给 CPU，是 GPU 覆盖面的最大缺口。
+2. **扩大几何层的调用面。** 当前只有 `common.stitch_two_images_with_orb()` 直接用 `GeometryEngine`，也就是 `builtin` 的两图 fallback 和 `sequential` 的每一步。主 `cv2.Stitcher` 成功时完全绕过 GPU 路径，`ScansStitchEngine` 根本没接几何引擎。
+3. **决定 1080p 90/270 旋转的归属。** 要让旋转留在 RGA，必须让下游接受 padded BGR stride（`1080` 活跃宽度 + `1088` stride），否则只能维持 RGA convert + CPU rotate。选型前不要动 `rga_engine.py` 的稳定路径。
+4. **补齐测试可运行性。** 当前 12 条测试里 8 条依赖 `cv2`，缺 OpenCV 的环境直接导入失败。要么在 CI/开发机固定安装 `requirements.txt`，要么给这些测试加 skip 保护。
+5. **对齐配置默认值。** 当前有三层默认值，容易让新会话读错：
+   - `config.json`：`stitch.engine=sequential`、`accel.geometry=opencl`、`camera.preview_fps=30`
+   - `app/config.py:DEFAULT_CONFIG`：`engine=builtin`、`geometry=cpu`、`preview_fps=30`
+   - `safe_int` / `normalize_choice` 兜底：`preview_fps` 取 15，`preprocess`/`geometry` 取 `cpu`，`selector` 取 `off`，`engine` 取 `builtin`
+
+   建议要么把 `DEFAULT_CONFIG` 与 `config.json` 对齐，要么在文档里统一声明“以 `config.json` / `/api/config/public` 为准”。
 
 ## 后续做什么
 
-- GPU/OpenCL：`warpPerspective` 的 direct OpenCL 已落位，下一步优先补 `remap`，再把更多真实拼接路径接到 `GeometryEngine`，避免只在 ORB fallback 中生效。
-- NPU/RKNN：在有模型和 runtime 后替换 `RknnSelector` fallback。
-- 拼接算法：实现 `SequentialPanoEngine`，做顺序配准、柱面投影、增量融合。
+- GPU/OpenCL：先 `remap`，再让 `SequentialPanoEngine` 或自研拼接路径持续吃 `GeometryEngine`。
+- NPU/RKNN：在有模型和 runtime 后替换 `RknnSelector` 的 `CpuSelector` 委托。
+- 拼接算法：在 `sequential` 基础上做柱面投影、曝光/颜色一致性、增量融合，减少对黑盒 `cv2.Stitcher` 的依赖。
+- 前端：`/api/stitch/output-clear` 后端已实现但三个页面都没调用；如需清理输出目录的入口可以补上。
 
 ## 哪些前提没满足前不要做
 
-- 不要把 `cv2.ocl.haveOpenCL()` 当成 direct OpenCL 成败判断；当前项目的 GPU 路径走的是 `ctypes -> libOpenCL.so`，不是 OpenCV UMat。
-- 没有可调用 RGA binding 前，不要宣称 `rga_active`。
+- 不要把 `cv2.ocl.haveOpenCL()` 当成 direct OpenCL 成败判断；当前项目的 GPU 路径走的是 `ctypes -> libOpenCL.so`，不是 OpenCV UMat。板端 OpenCV 4.5.4 至今仍是 `haveOpenCL=False`。
+- 不要把 `rga_ready` 当成失败，也不要把 `rga_fallback_cpu` 报成成功；验收要看 `rga_active` 且 `rga_fallback_calls=0`。
+- 不要把 `legacy_bgr` 路径的结果当成“真实 NV12 进入 RGA”的证据。
 - 没有 RKNN 模型、输入规范、阈值验证前，不要接入真实 NPU 关键帧判断。
-- 前端 API 兼容未验证前，不要大规模重写页面。
+- 不要把 padded-stride RGA 旋转加 CPU 紧密化说成纯 RGA 输出。
+- 改 `config.json` 后必须重启后端：四个引擎工厂都是模块级单例。
 
-## RGA 真实实现建议路线（给下一轮）
+## native/rga 当前真实 C ABI
 
-推荐路线：**最小 C/C++ librga/im2d wrapper + Python ctypes + 保留 CPU fallback**。源码已落在 `native/rga/`，下一步重点不是再设计接口，而是补齐板端开发资源并编译部署 `libmyui_rga.so`。
+`native/rga/myui_rga.h` 现在导出的不止 2 个符号，下面这份才是当前完整清单（`rotate_code`：`0=none`、`1=ccw90`、`2=cw90`、`3=180`）：
+
+```c
+int myui_rga_available(void);
+int myui_rga_nv12_to_bgr(const unsigned char *src_nv12, int src_w, int src_h,
+                         unsigned char *dst_bgr, int dst_w, int dst_h, int rotate_code);
+int myui_rga_bgr_rotate(const unsigned char *src_bgr, int src_w, int src_h,
+                        unsigned char *dst_bgr, int dst_w, int dst_h, int rotate_code);
+int myui_rga_bgr_rotate_strided(const unsigned char *src_bgr, int src_w, int src_h,
+                                int src_wstride, int src_hstride,
+                                unsigned char *dst_bgr, int dst_w, int dst_h,
+                                int dst_wstride, int dst_hstride, int rotate_code);
+int myui_rga_bgrx_rotate_to_bgr(const unsigned char *src_bgr, int src_w, int src_h,
+                                unsigned char *dst_bgr, int dst_w, int dst_h, int rotate_code);
+const char *myui_rga_last_error(void);
+const char *myui_rga_version(void);
+```
+
+错误码：`MYUI_RGA_OK=0`、`ERR_BAD_ARGUMENT=-1`、`ERR_UNSUPPORTED=-2`、`ERR_NO_DEVICE=-3`、`ERR_ALLOC=-4`、`ERR_IM2D=-1000`。
+
+若要实现 padded-stride 旋转路线，直接复用 `myui_rga_bgr_rotate_strided`，不需要再新增 native 接口。
+
+## RGA 真实实现建议路线（历史记录，方案已落地）
+
+下面几节是 2026-05-08/09 的历史推进记录。RGA wrapper 已经编译、部署并在板端验证 `rga_active`，这些“下一轮要做”的表述不再是当前待办，保留用于追溯选型理由。
+
+推荐路线：**最小 C/C++ librga/im2d wrapper + Python ctypes + 保留 CPU fallback**。源码已落在 `native/rga/`。
 
 下一轮优先顺序：
 
@@ -63,26 +98,13 @@
    native/rga/Makefile
    ```
 
-4. 当前已导出最小 C ABI：
+4. 最小 C ABI（当前完整清单见上文「native/rga 当前真实 C ABI」）。
 
-   ```c
-   int myui_rga_available(void);
-   int myui_rga_nv12_to_bgr(
-       const unsigned char *src_nv12,
-       int src_w,
-       int src_h,
-       unsigned char *dst_bgr,
-       int dst_w,
-       int dst_h,
-       int rotate
-   );
-   ```
-
-4. 修改 `app/preprocess/rga_engine.py`：
+5. 修改 `app/preprocess/rga_engine.py`：
    - wrapper 加载成功并处理成功：`mode_tag = rga_active`
    - wrapper 不存在、加载失败、单帧处理失败：自动 fallback CPU，`mode_tag = rga_fallback_cpu`
 
-5. benchmark 必须能区分：
+6. benchmark 必须能区分（当前还多一个 `rga_ready`，表示 wrapper 已加载但未处理 NV12 帧）：
    - `cpu_base`
    - `rga_fallback_cpu`
    - `rga_active`

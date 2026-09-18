@@ -1,5 +1,22 @@
 # 06 坑点与发现
 
+本文按时间顺序累积，**同一主题后面的条目会推翻前面的条目**。阅读时先看下面的现行结论表，再按需回溯细节。
+
+## 现行结论速查（2026-09-18 按代码核对）
+
+| 主题 | 当前有效结论 | 已过期的旧条目 |
+| --- | --- | --- |
+| OpenCV OpenCL | 板端 `cv2.ocl.haveOpenCL()` 仍为 `False`，不要用它判断本项目 GPU 状态 | 仍然有效 |
+| 项目 OpenCL 路径 | `ctypes -> libOpenCL.so` 的 direct 实现，`warpPerspective` 真实走 GPU | 2026-05-08/05-12 的「`OpenCLGeometryEngine` 是 placeholder」已过期，见 2026-05-13 条目 |
+| `remap()` | 仍无 GPU 实现，每次调用累加 `remap_fallback_calls` 后转 CPU | — |
+| 几何层覆盖面 | 只在 `common.stitch_two_images_with_orb()` 被直接调用 | — |
+| RGA wrapper | 已交叉编译产出并在板端验证 `rga_active`；板端仍缺 headers/`g++`，不能就地重编 | 2026-05-08 的「未产出 `.so`、只能 fallback」已过期 |
+| 1080p 90/270 旋转 | RGA 只做 `NV12 -> BGR`，旋转由 CPU 补做；根因是 BGR888 width stride 需 16 对齐 | — |
+| 相机节点 | 动态别名 `/dev/video-camera0` + 多候选探测 | 所有硬编码 `/dev/video44` 的表述已过期，见 2026-05-12 条目 |
+| 采集后端默认值 | `auto_raw`（raw NV12 优先） | `legacy_bgr`、`gst_nv12_raw` 作为默认值的表述已过期 |
+| benchmark synthetic 尺寸 | 固定 320x240，不要改回 300x220 | — |
+| 板端文件同步 | 网络可用时用 Wi-Fi + `scp`；串口只做 shell 恢复与 bootstrap | 「只能串口逐文件同步」已放宽，见 2026-05-18 条目 |
+
 ## [2026-05-08] OpenCV UMat/GPU 当前不可作为依赖前提
 
 ### 现象
@@ -28,6 +45,8 @@
 后续若要启用 GPU/OpenCL，需要单独验证：OpenCV build flags、OpenCL ICD、Mali runtime、目标 kernel/driver、以及具体 `warpPerspective/remap` 的真实性能。
 
 ## [2026-05-12] 新镜像已能枚举原生 OpenCL 设备，但当前应用链路仍未真正启用
+
+> 本节关于「`opencl_geometry.py` 是占位实现」的部分已被下一节（2026-05-13）推翻，仅保留作为时间线。系统层 OpenCL 可枚举、OpenCV `haveOpenCL=False` 这两条结论仍然有效。
 
 ### 现象
 

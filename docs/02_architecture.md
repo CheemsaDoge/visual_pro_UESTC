@@ -9,17 +9,64 @@
 ## 只记这几个关键关系
 
 - `camera_routes.py` 进入 `camera_service.py`，`FramePacket` 也在这条链路里产生，不在 routes。
-- `/api/camera/stream` 和 `/api/camera/frame.jpg` 由 `backend.py` 直接处理，预览数据来自 `camera_service.py` 的运行时缓存。
+- `/api/camera/stream` 和 `/api/camera/frame.jpg` 由 `backend.py` 直接处理（`Handler.send_camera_stream()` / `Handler.send_camera_frame_jpeg()`），数据来自 `camera_service.get_camera_stream_frame()` 的运行时缓存。
 - `stitch_routes.py` 进入 `stitch_service.py`，拼接时会带上 `storage_service.py`、`StitchEngine` 和 `GeometryEngine`。
-- `system_routes.py` 和 `wifi_routes.py` 现在都还保留 route-local logic，不是纯粹转发到 service。
-- `camera_service.stop_camera_session()` 在自动拼接时会直接调用 `run_image_stitch()`。
+- `system_routes.py` 和 `wifi_routes.py` 现在都还保留 route-local logic，不是纯粹转发到 service；`wifi_routes.py` 直接实现 ConnMan 交互，`system_routes.py` 直接跑 `hostname`/`uname`/`ip` 等命令。
+- `camera_service.stop_camera_session()` 在拍到 ≥2 张图时会直接调用 `stitch_service.run_image_stitch()`，所以相机和静态图片共用同一套拼接流程。
 
 ## 当前代码分层
 
 ```text
-backend.py                 # HTTP / static / 预览流
-app/routes/                # camera / stitch / system / wifi
-app/services/              # camera / stitch / storage / geometry / preprocess / keyframe
-app/capture/               # capture adapters
-app/stitch_engine/         # OpenCV / Sequential / Scans
+backend.py                 # HTTP / static / 预览流（MJPEG + 单帧 JPEG）
+app/config.py              # config.json 加载、归一化、导出常量
+app/schemas.py             # FramePacket / ProcessedFrame
+app/routes/                # camera / stitch / system / wifi 的 JSON 路由分发
+app/services/              # camera / stitch / storage / geometry / preprocess / keyframe / metrics
+app/capture/               # gst_capture / gst_raw_nv12_capture / v4l2_capture
+app/preprocess/            # cpu_engine / rga_engine
+app/geometry/              # cpu_geometry / opencl_geometry / opencl_runtime
+app/selector/              # off_selector / cpu_selector / rknn_selector
+app/stitch_engine/         # common / opencv_engine / sequential_engine / scans_engine
+app/utils/                 # log / timing
+native/rga/                # libmyui_rga.so 的 C++ wrapper 源码与 Makefile
+tests/                     # unit / integration / smoke / benchmark
+vendor/pannellum/          # 离线 Pannellum 2.5.7
 ```
+
+## HTTP 分发顺序
+
+`backend.py` 中的路由是显式元组，按顺序尝试，第一个返回非 `None` 的处理器胜出：
+
+```text
+GET_ROUTES  = system_routes.handle_get, wifi_routes.handle_get, stitch_routes.handle_get, camera_routes.handle_get
+POST_ROUTES = system_routes.handle_post, wifi_routes.handle_post, camera_routes.handle_post, stitch_routes.handle_post
+```
+
+`do_GET()` 的实际优先级是：
+
+1. `/` 重写为 `/index.html`，交给 `SimpleHTTPRequestHandler`
+2. `/api/camera/frame.jpg`（支持 `session_id`、`after` 查询参数）
+3. `/api/camera/stream`（支持 `session_id`，会话不匹配返回 404）
+4. 上面四个 `handle_get`
+5. `config.STITCH_INPUT_URL_PREFIX` / `STITCH_OUTPUT_URL_PREFIX` 前缀的静态图片（带 `..`、绝对路径、越界检查）
+6. 其余交给默认静态文件处理
+
+## 引擎装配位置
+
+引擎不是在 routes 里 new 出来的，而是由 service 层的单例工厂创建：
+
+- `app/services/preprocess_service.py:get_preprocess_engine()`：`accel.preprocess=rga` → `RgaPreprocessEngine`，否则 `CpuPreprocessEngine`。
+- `app/services/geometry_service.py:get_geometry_engine()`：`accel.geometry=opencl` → `OpenCLGeometryEngine`，否则 `CpuGeometryEngine`。
+- `app/services/keyframe_service.py:get_selector()`：`cpu_basic` → `CpuSelector`，`rknn` → `RknnSelector`，否则 `OffSelector`。
+- `app/services/stitch_service.py:get_stitch_engine()`：`sequential` → `SequentialPanoEngine`（fallback 为 `OpenCVStitchEngine`），`scans` → `ScansStitchEngine`，其余 → `OpenCVStitchEngine`。`script` 引擎不走这里，而是在 `run_image_stitch()` 里调用 `run_stitch_script()`。
+
+这四个工厂都是模块级单例，进程内只创建一次，因此改 `config.json` 后需要重启后端。
+
+## 相机会话内部结构
+
+`camera_service.py` 用一个模块级 `CAMERA_RUNTIME` 字典加 `CAMERA_RUNTIME_LOCK` 维护单会话状态，`start_camera_session()` 会拉起两个 daemon 线程：
+
+- `_camera_capture_loop()`：打开采集设备、循环读帧、把最新帧存成 `FramePacket`；`mode=auto` 时按 `auto_interval_sec` 触发 `process_for_save()` → `selector.decision()` → 保存或计入 `dropped_count`。
+- `_camera_preview_encode_loop()`：按 `preview_fps` 节流，调用 `process_for_preview()` 生成 `preview_jpeg`，写入 `last_frame_jpeg` 供 `/api/camera/stream` 与 `/api/camera/frame.jpg` 读取。
+
+`require_rga=true` 时，`_enforce_required_rga()` 会在 `mode_tag != "rga_active"` 时抛错，用于生产验收防止静默 fallback。

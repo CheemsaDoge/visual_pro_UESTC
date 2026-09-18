@@ -1,36 +1,44 @@
 # 01 当前状态
 
-最近更新：2026-05-13
+最近更新：2026-09-18（按当前代码重新核对）
+
+## 代码现状速查
+
+| 项 | 真实值 |
+| --- | --- |
+| `backend.py` | 227 行，仅 HTTP transport / 静态文件 / MJPEG / 单帧 JPEG |
+| 后端模块 | `app/` 下 44 个 Python 文件，合计 5758 行 |
+| 最大模块 | `app/services/camera_service.py` 1114 行 |
+| 拼接引擎 | `builtin` / `sequential` / `scans` / `script` 四种 |
+| `config.json` 生效引擎 | `stitch.engine=sequential`，`accel.preprocess=rga`，`accel.geometry=opencl`，`accel.selector=off` |
+| 测试用例 | 12 条（unit 11 + integration 1）+ 4 个板端 smoke 脚本 + 1 个 benchmark |
 
 ## 已完成
 
-- `backend.py` 已变薄，只保留 HTTP transport、静态文件、MJPEG/单帧 JPEG 响应。
-- 新增模块目录：
-  - `app/config.py`
-  - `app/routes/`
-  - `app/services/`
-  - `app/capture/`
-  - `app/preprocess/`
-  - `app/geometry/`
-  - `app/selector/`
-  - `app/stitch_engine/`
-  - `app/utils/`
-- 新增基础数据对象：`FramePacket`、`ProcessedFrame`，位于 `app/schemas.py`。
+- `backend.py` 已变薄，只保留 HTTP transport、静态文件、MJPEG/单帧 JPEG 响应，路由通过 `GET_ROUTES`/`POST_ROUTES` 元组分发。
+- 模块目录已建立：
+  - `app/config.py`、`app/schemas.py`
+  - `app/routes/`（camera / stitch / system / wifi）
+  - `app/services/`（camera / stitch / storage / geometry / preprocess / keyframe / metrics）
+  - `app/capture/`（gst_capture / gst_raw_nv12_capture / v4l2_capture）
+  - `app/preprocess/`、`app/geometry/`、`app/selector/`、`app/stitch_engine/`、`app/utils/`
+- 基础数据对象 `FramePacket`、`ProcessedFrame` 位于 `app/schemas.py`；`FramePacket` 含 `stride_w`、`stride_h`、`timestamp_ns`、`buffer_size`、`stride_inferred`，并在 `__post_init__` 中自动补齐。
 - 已接入引擎抽象：
-  - `CpuPreprocessEngine`
-  - `RgaPreprocessEngine`（当前 fallback 到 CPU）
-  - `CpuGeometryEngine`
-  - `OpenCLGeometryEngine`（当前 `warpPerspective` 可走 direct OpenCL，`remap` 仍 fallback 到 CPU）
-  - `OffSelector`
-  - `CpuSelector`
-  - `RknnSelector`（当前 fallback 到 CPU basic）
-  - `OpenCVStitchEngine`
-  - `SequentialPanoEngine`（现为顺序两两 ORB 拼接，失败时回退到 OpenCV PANORAMA）
-  - `ScansStitchEngine`（增强版 OpenCV SCANS 模式）
-- 相机预览/保存已统一走 `PreprocessEngine`。
-- 自动拍摄已改成“先 selector 判断是否保留，再保存”。
-- `config.json` 已新增 `accel` 和 `selector.cpu_basic` 配置。
-- 新增 `tests/unit/`、`tests/integration/`、`tests/benchmark/run_benchmark.py`。
+  - `CpuPreprocessEngine`（`mode_tag=cpu_base`）
+  - `RgaPreprocessEngine`（`rga_ready` / `rga_active` / `rga_fallback_cpu`）
+  - `CpuGeometryEngine`（`geometry_cpu`）
+  - `OpenCLGeometryEngine`（runtime 可用时 `geometry_opencl_direct`，否则 `opencl_fallback_cpu`；`warpPerspective` 走 direct OpenCL，`remap` 明确 CPU fallback）
+  - `OffSelector`（`selector_off`）
+  - `CpuSelector`（`selector_cpu_basic`）
+  - `RknnSelector`（`rknn_fallback_cpu_basic`，`available=false`）
+  - `OpenCVStitchEngine`（`opencv_panorama_enhanced`，含正反序两次尝试与两图 ORB fallback）
+  - `SequentialPanoEngine`（`sequential_pairwise_orb`，失败时回退 `OpenCVStitchEngine`）
+  - `ScansStitchEngine`（`opencv_scans_enhanced`，含质量过滤与 `registration_resol=0.6`）
+- 相机预览/保存统一走 `PreprocessEngine`；采集线程与预览编码线程分离，预览按 `preview_fps` 节流。
+- 自动拍摄是“先 selector 判断是否保留，再保存”，丢弃帧计入 `dropped_count`。
+- `config.json` 已有 `accel` 和 `selector.cpu_basic` 配置，另有 `stitch.viewer` 下发给 Pannellum。
+- 已有 `tests/unit/`、`tests/integration/`、`tests/smoke/`、`tests/benchmark/run_benchmark.py`。
+- 离线 Pannellum 2.5.7 位于 `vendor/pannellum/`，板端展示全景不需要联网。
 - `native/rga/` 已新增最小 wrapper 源码、头文件和 Makefile：
   - `native/rga/myui_rga.cpp`
   - `native/rga/myui_rga.h`
@@ -51,6 +59,12 @@ python3 backend.py
 python3 -m unittest discover tests
 python3 tests/benchmark/run_benchmark.py --preprocess cpu --selector off
 ```
+
+2026-09-18 本地复核结果（Windows，Python 3.12.6，环境未装 `cv2`）：
+
+- `python -m py_compile backend.py stitch_demo.py $(find app tests -name '*.py')`：全部通过，退出码 0。
+- `python -m unittest discover tests`：`tests.unit.test_opencl_geometry` 4 条通过；其余 4 个模块在导入阶段报 `ModuleNotFoundError: No module named 'cv2'`。这属于环境缺 OpenCV，不是代码缺陷；需要完整跑测试时按 `requirements.txt` 安装 `numpy` 与 `opencv-python`。
+- 仓库当前没有 `reports/` 目录，benchmark 首次运行会自行创建。
 
 2026-05-08 开发机已完成一次验证：
 
@@ -146,43 +160,58 @@ python3 tests/benchmark/run_benchmark.py --preprocess cpu --selector off
 - `cd /userdata/myui/native/rga && make probe`：能看到 `/dev/rga` 和 `librga.so`，headers 为空，compiler 为空。
 - `cd /userdata/myui/native/rga && make`：失败在 `error: C++ compiler 'g++' not found`。
 
-保留主要 API：
+当前完整 API 清单（详见 `docs/04_api_compatibility.md`）：
+
+GET：
 
 - `/`
 - `/api/config/public`
 - `/api/status`
-- `/api/camera/start`
-- `/api/camera/capture`
-- `/api/camera/stop`
+- `/api/wifi/list`
+- `/api/stitch/status`
+- `/api/stitch/input-list`
+- `/api/stitch/output-list`
 - `/api/camera/status`
 - `/api/camera/frame.jpg`
 - `/api/camera/stream`
-- `/api/stitch/status`
-- `/api/stitch/image`
-- `/api/stitch/input-list`
-- `/api/stitch/output-list`
-- `/api/stitch/output-clear`
+- `/stitch_input/<name>`、`/stitch_output/<name>`（前缀可配）
+
+POST：
+
+- `/api/start-systemui`
+- `/api/wifi/scan`、`/api/wifi/connect`、`/api/wifi/disconnect`
+- `/api/camera/start`、`/api/camera/capture`、`/api/camera/stop`
+- `/api/stitch/image`、`/api/stitch/output-clear`
 
 ## 当前限制
 
-- `RgaPreprocessEngine` 已能通过 `ctypes` 调用 `libmyui_rga.so`，但当前板端尚未编译出 wrapper：缺 `im2d.h`/`RgaApi.h` 和 `g++`。
-- 当前 Python 采集适配器进入预处理边界时仍主要是 BGR ndarray；即使 wrapper 编译成功，相机主链路仍需要把原始 NV12 buffer 更早封装为 `FramePacket(pixel_format="NV12")` 才能发挥 RGA 价值。
-- 2026-05-12 板端已确认原生 `libOpenCL.so` 能枚举 `ARM Platform / Mali-G610 r0p0`，且 2026-05-13 已确认可以真实 `build program + launch kernel + read back`。
-- 当前 `OpenCLGeometryEngine` 只把 `warpPerspective` 接到了 direct OpenCL；`remap` 仍明确回退到 CPU。
-- 当前几何层只在 `OpenCVStitchEngine` 的 ORB fallback 路径直接调用；主 `cv2.Stitcher` 成功时不会自动经过这条 OpenCL 几何路径。
-- `SequentialPanoEngine` 已实现顺序两两 ORB 拼接，但当前仍依赖特征匹配质量；复杂多图场景下仍可能回退到 `OpenCVStitchEngine`。
-- `RknnSelector` 只是占位，未接真实 RKNN 推理。
+- `RgaPreprocessEngine` 通过 `ctypes` 调用 `libmyui_rga.so`，仓库内已有交叉编译出的 `native/rga/libmyui_rga.so`；板端仍缺 `im2d.h`/`RgaApi.h` 和 `g++`，所以不能在板上重新编译，只能同步已构建产物。
+- 1920x1080 且旋转为 90/270 时，RGA 只完成 `NV12 -> BGR`（预览路径附带缩放），旋转由 CPU 补做，状态标记为 `rga_transform=convert_only_cpu_rotate` 或 `convert_resize_only_cpu_rotate`，`post_rotate_cpu=True`。原因是 librga 要求 BGR888 width stride 16 对齐，紧密目标 stride `1080` 不满足，`1088` 才可以。
+- `legacy_bgr` 采集路径进入 Python 时已是 BGR ndarray，不能作为“真实 NV12 进入 RGA”的证据；只有 `gst_nv12_raw` / `v4l2ctl_nv12_raw`（或 `auto_raw` 命中它们）才能。
+- 2026-05-12 板端已确认原生 `libOpenCL.so` 能枚举 `ARM Platform / Mali-G610 r0p0`，且 2026-05-13 已确认可以真实 `build program + launch kernel + read back`；但板端 OpenCV 4.5.4 仍 `haveOpenCL=False`。
+- `OpenCLGeometryEngine` 只把 `warpPerspective` 接到 direct OpenCL；`remap()` 每次调用都累加 `remap_fallback_calls` 并转给 CPU。
+- 几何层只在 `common.stitch_two_images_with_orb()` 这条路径被直接调用，即 `builtin` 的两图 fallback 与 `sequential` 的每一步；主 `cv2.Stitcher` 成功时不经过它，`ScansStitchEngine` 完全不接几何引擎。
+- `SequentialPanoEngine` 依赖 ORB 特征匹配质量，任一相邻对失败就整条序列失败并回退 `OpenCVStitchEngine`。
+- `RknnSelector` 只是占位，直接委托 `CpuSelector`，未接真实 RKNN 推理。
+- 四个引擎工厂都是模块级单例，改 `config.json` 后必须重启后端才生效。
+- `wifi_routes` 依赖 `pty`，Windows 上自动降级为“仅 Linux 开发板可用”。
 
 ## 当前默认主线
 
-默认配置仍是安全 CPU baseline：
+仓库内 `config.json` 当前生效的是加速配置，不是 CPU baseline：
 
 ```json
 "accel": {
-  "preprocess": "cpu",
-  "geometry": "cpu",
+  "preprocess": "rga",
+  "geometry": "opencl",
   "selector": "off"
 }
+```
+
+`app/config.py` 的 `DEFAULT_CONFIG` 里 `accel.geometry` 仍是 `cpu`，只有 `config.json` 缺该字段时才会用到。若要强制回到安全 baseline，显式写入：
+
+```json
+"accel": { "preprocess": "cpu", "geometry": "cpu", "selector": "off" }
 ```
 
 ## 当前风险
@@ -579,3 +608,18 @@ This confirms the 30fps preview target is reachable in the sampled backend path.
   - Manually asserting its configured GPIOs (`gpio34` power, `gpio58` reset), then re-adding an `imx415` client on bus 7, still did not produce a usable `/dev/video31` frame.
   - The practical conclusion is that `/dev/video31` remains a board-level sensor/power/reset/connection problem; the software fix in this repo is to route the product reliably onto the working `/dev/video22` chain.
 - Wi-Fi scan/list remained functional, but `/api/status` had a parsing bug: it could report `wifi: powered off` by matching the P2P block in `connmanctl technologies`. The status logic now scopes itself to the Wi-Fi block only.
+
+## 2026-09-18 按代码复核：历史记录与当前代码的差异
+
+本节只记录“历史章节写法”与“当前代码事实”不一致的地方，历史章节本身作为时间线保留，不再回改。
+
+1. **采集节点**：历史多处写 `/dev/video44`。当前 `config.json` 的 `stitch.camera.source` 是 `/dev/video-camera0`，`camera_service.CAMERA_DEVICE_HINTS` 顺序为 `/dev/video-camera0`、`/dev/video44`、`/dev/video22`、`/dev/video31`、`/dev/video62`，并会先用 `v4l2-ctl --list-devices` 发现 `rkisp_mainpath` 节点。读旧章节时把 `/dev/video44` 当历史值。
+2. **采集后端默认值**：历史有 `legacy_bgr`、`gst_nv12_raw` 两种说法。当前默认是 `auto_raw`：先尝试 GStreamer raw NV12（OpenCV 实现优先，GI 实现兜底），再尝试 `v4l2-ctl` raw NV12，最后才走 legacy OpenCV/GStreamer 与 `v4l2ctl` BGR 路径。前端 `stitch.html` 也发送 `capture_backend: 'auto_raw'`。
+3. **拼接引擎默认值**：历史章节多次出现 `engine=builtin`。当前 `config.json` 是 `sequential`；`app/config.py:DEFAULT_CONFIG` 才是 `builtin`。
+4. **几何引擎默认值**：`config.json` 是 `opencl`，`DEFAULT_CONFIG` 是 `cpu`。历史“默认仍是安全 CPU baseline”的说法对当前仓库配置已不成立。
+5. **`OpenCLGeometryEngine` 不再是占位**：2026-05-12 章节写的 `actual_name` 固定为 `cpu` 已过期。当前实现会按 `DirectOpenCLRuntime.status()` 决定 `actual`/`mode_tag`，runtime 可用时是 `opencl` / `geometry_opencl_direct`。
+6. **`SequentialPanoEngine` 不再是占位**：07 文档旧条目仍写“实现 SequentialPanoEngine”，实际它已完成顺序两两 ORB 拼接并带 `OpenCVStitchEngine` fallback。
+7. **`RgaPreprocessEngine` 多了 `rga_ready`**：历史只提 `rga_active` / `rga_fallback_cpu`。当前 wrapper 加载成功但尚未处理 NV12 帧时是 `rga_ready`，不要把它当成失败。
+8. **`preview_fps` 有三层默认值**：`config.json` 是 30，`DEFAULT_CONFIG` 也是 30，但 `safe_int(CAMERA_CONFIG.get("preview_fps", 15), 15, ...)` 的兜底是 15（取值范围 1~30）。同理 `normalize_choice` 对 `accel.*` 与 `stitch.engine` 也有独立兜底值，与 `DEFAULT_CONFIG` 不同。
+9. **测试数量**：历史写过“4 条 / 5 条测试”。当前是 12 条（`test_opencl_geometry` 4、`test_preprocess` 2、`test_selector` 1、`test_stitch_engine` 4、integration 1）。
+10. **`reports/` 目录**：历史章节引用 `reports/board-fetch-20260518-213920/...`，当前仓库工作区内没有 `reports/` 目录（`.gitignore` 忽略 `reports/*`），只有一个空的 `report/` 目录。需要复现快照时要重新拉取。
