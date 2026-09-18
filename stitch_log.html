@@ -4,54 +4,557 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-  <title>拼接日志</title>
+  <title>拼接日志与性能诊断 · STITCH</title>
+  <link rel="stylesheet" href="ui.css" />
   <style>
-    :root { --bg:#09090b; --card:#18181b; --border:#303035; --text:#f5f5f5; --muted:#a1a1aa; --accent:#0a84ff; --good:#30d158; --bad:#ff453a; }
-    * { box-sizing:border-box; }
-    body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,sans-serif; }
-    header { position:sticky; top:0; z-index:2; display:flex; justify-content:space-between; align-items:center; padding:14px 16px; background:rgba(9,9,11,.94); border-bottom:1px solid var(--border); }
-    h1 { margin:0; font-size:21px; } a, button { color:#fff; text-decoration:none; } button { border:0; border-radius:8px; padding:8px 11px; background:var(--accent); font-size:14px; font-weight:700; }
-    main { max-width:960px; margin:0 auto; padding:14px; }
-    .empty { margin-top:28px; text-align:center; color:var(--muted); }
-    .log-card { border:1px solid var(--border); border-radius:14px; background:var(--card); margin-bottom:12px; overflow:hidden; }
-    .log-title { display:flex; justify-content:space-between; gap:12px; width:100%; padding:14px; text-align:left; background:transparent; border-radius:0; }
-    .log-title .small { display:block; color:var(--muted); font-size:12px; margin-top:5px; font-weight:400; }
-    .status { flex:0 0 auto; font-size:13px; } .success { color:var(--good); } .failed { color:var(--bad); }
-    .detail { display:none; border-top:1px solid var(--border); padding:14px; } .detail.open { display:block; }
-    .summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:8px; margin-bottom:14px; }
-    .metric { padding:10px; border-radius:9px; background:#242428; } .metric label { display:block; color:var(--muted); font-size:12px; } .metric strong { display:block; margin-top:4px; font-size:16px; }
-    h2 { margin:16px 0 8px; font-size:15px; } table { width:100%; border-collapse:collapse; font-size:13px; } th,td { padding:8px; border-bottom:1px solid #303035; text-align:left; vertical-align:top; } th { color:var(--muted); font-weight:600; }
-    pre { margin:0; padding:10px; overflow:auto; background:#09090b; border-radius:8px; color:#d4d4d8; font-size:12px; line-height:1.45; }
-    .note { color:var(--muted); font-size:12px; line-height:1.5; }
+    body {
+      overflow-y: auto;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    .log-page-container {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 16px 20px 48px;
+    }
+
+    .log-header {
+      position: sticky;
+      top: 12px;
+      z-index: 50;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 18px;
+      background: rgba(11, 15, 23, 0.92);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md);
+      margin-bottom: 20px;
+    }
+
+    /* Filter Chips */
+    .filter-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+      align-items: center;
+    }
+    .filter-chip {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      border-radius: var(--radius-full);
+      padding: 6px 14px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all var(--trans-fast);
+    }
+    .filter-chip:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+    }
+    .filter-chip.active {
+      background: var(--accent-blue);
+      border-color: var(--accent-blue-light);
+      color: #ffffff;
+      box-shadow: 0 0 12px var(--accent-blue-glow);
+    }
+
+    /* Log Card Item */
+    .log-card {
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      background: var(--bg-surface-glass);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      margin-bottom: 16px;
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+      transition: all var(--trans-fast);
+    }
+    .log-card:hover {
+      border-color: var(--border-medium);
+    }
+    .log-card.card-open {
+      border-color: rgba(14, 165, 233, 0.35);
+      box-shadow: var(--shadow-md);
+    }
+
+    /* Card Trigger Button */
+    .log-title-btn {
+      width: 100%;
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: transparent;
+      border: none;
+      color: var(--text-main);
+      text-align: left;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .log-main-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .log-time-title {
+      font-size: 1.1rem;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .log-meta-line {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Status Pill */
+    .status-badge-lg {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: var(--radius-full);
+      font-size: 0.85rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+    .status-badge-lg.success {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+    .status-badge-lg.failed {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.35);
+    }
+
+    /* Detail Section */
+    .log-detail {
+      display: none;
+      border-top: 1px solid var(--border-subtle);
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.25);
+    }
+    .log-detail.open {
+      display: block;
+    }
+
+    /* Metric Grid (KPI Tiles) */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .metric-tile {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .metric-tile-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .metric-tile-val {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: #ffffff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    /* Waterfall / Stages Section */
+    .section-title {
+      font-size: 0.95rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      margin: 20px 0 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Stage Timeline Visual Bar */
+    .timeline-bar-wrapper {
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      border: 1px solid var(--border-subtle);
+      margin-bottom: 16px;
+    }
+    .timeline-track {
+      height: 14px;
+      border-radius: 7px;
+      background: rgba(0, 0, 0, 0.4);
+      overflow: hidden;
+      display: flex;
+      margin-bottom: 8px;
+    }
+    .timeline-segment {
+      height: 100%;
+      transition: width 0.3s ease;
+    }
+
+    /* Data Table */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin-bottom: 18px;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+    }
+    .data-table th {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-secondary);
+      font-weight: 700;
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .data-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(0, 0, 0, 0.15);
+      vertical-align: top;
+    }
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* JSON Box */
+    .code-block-wrapper {
+      position: relative;
+      margin-bottom: 16px;
+    }
+    .copy-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all var(--trans-fast);
+    }
+    .copy-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.18);
+    }
+
+    pre.code-json {
+      margin: 0;
+      padding: 14px;
+      overflow: auto;
+      background: #080b12;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: #cbd5e1;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.8rem;
+      line-height: 1.5;
+    }
+
+    .note-box {
+      background: rgba(245, 158, 11, 0.08);
+      border-left: 3px solid var(--accent-orange);
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      color: #cbd5e1;
+      line-height: 1.5;
+      margin-top: 14px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--text-muted);
+      font-size: 1rem;
+      background: var(--bg-surface-glass);
+      border-radius: var(--radius-lg);
+      border: 1px dashed var(--border-subtle);
+    }
+
+    @media (max-width: 768px) {
+      .metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
   </style>
 </head>
 <body>
-  <header><a href="stitch.html">← 拼接</a><h1>详细拼接日志</h1><button onclick="loadLogs()">刷新</button></header>
-  <main id="logs"><div class="empty">正在读取本次服务运行中的拼接记录…</div></main>
+  <div class="log-page-container">
+    <!-- Sticky Header -->
+    <header class="log-header">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <a href="stitch.html" class="header-nav-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          <span>返回拼接</span>
+        </a>
+        <h1 style="margin:0; font-size:1.25rem; font-weight:800;">详细拼接日志</h1>
+      </div>
+
+      <button class="btn btn-primary" onclick="loadLogs()" style="height:38px; padding:0 16px; font-size:0.88rem;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        <span>刷新</span>
+      </button>
+    </header>
+
+    <!-- Filter Bar -->
+    <div class="filter-bar">
+      <span style="font-size:0.85rem; color:var(--text-muted); font-weight:700;">筛选:</span>
+      <button class="filter-chip active" onclick="setFilter('all', this)">全部</button>
+      <button class="filter-chip" onclick="setFilter('success', this)">仅成功</button>
+      <button class="filter-chip" onclick="setFilter('failed', this)">仅失败</button>
+    </div>
+
+    <!-- Logs Container -->
+    <main id="logs">
+      <div class="empty-state">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:12px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
+        <div>正在读取本次服务运行中的拼接记录…</div>
+      </div>
+    </main>
+  </div>
+
+  <script src="ui.js"></script>
   <script>
     const root = document.getElementById('logs');
+    let allReports = [];
+    let currentFilter = 'all';
+
     const ms = value => value == null ? '不可用' : Number(value).toFixed(1) + ' ms';
     const percent = value => value == null ? '不可用' : Number(value).toFixed(1) + '%';
     const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+
+    // Stage colors for visual timeline
+    const STAGE_COLORS = [
+      '#0ea5e9', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#3b82f6'
+    ];
+
+    function copyToClipboard(text, btn) {
+      navigator.clipboard.writeText(text).then(() => {
+        const old = btn.textContent;
+        btn.textContent = '已复制!';
+        setTimeout(() => btn.textContent = old, 1500);
+      });
+    }
+
     const stageRows = report => {
       const stages = [...(report.stages || []), ...((report.engine_detail || {}).stages || [])];
-      return stages.map(stage => `<tr><td>${esc(stage.name)}</td><td>${ms(stage.elapsed_ms)}</td><td><pre>${esc(JSON.stringify(Object.fromEntries(Object.entries(stage).filter(([key]) => !['name','elapsed_ms'].includes(key))), null, 2))}</pre></td></tr>`).join('') || '<tr><td colspan="3">本引擎未提供可分阶段数据</td></tr>';
+      if (!stages.length) {
+        return '<tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding:16px;">本引擎未提供可分阶段数据</td></tr>';
+      }
+      return stages.map((stage, idx) => {
+        const cleanStage = Object.fromEntries(Object.entries(stage).filter(([key]) => !['name','elapsed_ms'].includes(key)));
+        const color = STAGE_COLORS[idx % STAGE_COLORS.length];
+        return `
+          <tr>
+            <td>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="width:8px; height:8px; border-radius:50%; background:${color};"></span>
+                <strong>${esc(stage.name)}</strong>
+              </div>
+            </td>
+            <td style="font-family:monospace; font-weight:700; color:${color};">${ms(stage.elapsed_ms)}</td>
+            <td><pre class="code-json" style="padding:6px 8px; font-size:0.75rem;">${esc(JSON.stringify(cleanStage, null, 2))}</pre></td>
+          </tr>
+        `;
+      }).join('');
     };
+
+    const renderTimelineBar = report => {
+      const stages = [...(report.stages || []), ...((report.engine_detail || {}).stages || [])];
+      const total = report.total_elapsed_ms || 1;
+      if (!stages.length) return '';
+
+      const segments = stages.map((st, idx) => {
+        const pct = Math.max(1, ((st.elapsed_ms || 0) / total) * 100);
+        const color = STAGE_COLORS[idx % STAGE_COLORS.length];
+        return `<div class="timeline-segment" style="width:${pct}%; background:${color};" title="${esc(st.name)}: ${ms(st.elapsed_ms)} (${pct.toFixed(1)}%)"></div>`;
+      }).join('');
+
+      const legends = stages.map((st, idx) => {
+        const color = STAGE_COLORS[idx % STAGE_COLORS.length];
+        return `
+          <div style="display:inline-flex; align-items:center; gap:5px; font-size:0.75rem; color:var(--text-secondary);">
+            <span style="width:8px; height:8px; border-radius:2px; background:${color};"></span>
+            <span>${esc(st.name)}: <strong>${ms(st.elapsed_ms)}</strong></span>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="timeline-bar-wrapper">
+          <div class="timeline-track">${segments}</div>
+          <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:8px;">${legends}</div>
+        </div>
+      `;
+    };
+
     const card = (report, forceOpen) => {
       const resources = report.resources || {};
       const input = report.input || {};
       const detail = report.engine_detail || {};
       const reportId = esc(report.id);
-      return `<section class="log-card"><button class="log-title" onclick="toggle('${reportId}')"><span><strong>${esc(report.started_at || report.id)}</strong><span class="small">${esc(report.source || 'image')} · ${esc(input.count || 0)} 张输入 · ${esc((detail.engine || report.config?.requested_engine || 'unknown'))}</span></span><span class="status ${esc(report.status)}">${report.status === 'success' ? '成功' : '失败'}</span></button><div id="detail-${reportId}" class="detail ${forceOpen ? 'open' : ''}"><div class="summary"><div class="metric"><label>总耗时</label><strong>${ms(report.total_elapsed_ms)}</strong></div><div class="metric"><label>系统 CPU（区间均值）</label><strong>${percent(resources.system_cpu_percent_approx)}</strong></div><div class="metric"><label>后端 CPU 容量占用</label><strong>${percent(resources.backend_process_cpu_capacity_percent_approx)}</strong></div><div class="metric"><label>输出尺寸</label><strong>${esc((report.output || {}).width || '-') } × ${esc((report.output || {}).height || '-')}</strong></div></div><h2>输入与输出</h2><pre>${esc(JSON.stringify({input: report.input, output: report.output, message: report.message}, null, 2))}</pre><h2>阶段耗时、参数与特征数据</h2><table><thead><tr><th>阶段</th><th>耗时</th><th>参数 / 结果</th></tr></thead><tbody>${stageRows(report)}</tbody></table><h2>引擎、加速与资源快照</h2><pre>${esc(JSON.stringify({config: report.config, engine_detail: detail, resources: resources}, null, 2))}</pre><p class="note">GPU 数据只读取系统安全暴露的 devfreq/sysfs 计数器；内核未提供时显示为空，不会伪造占用率。日志仅保留当前后端进程最近 30 次拼接，服务重启后清空。</p></div></section>`;
+      const isSuccess = report.status === 'success';
+
+      const ioJson = JSON.stringify({input: report.input, output: report.output, message: report.message}, null, 2);
+      const engineJson = JSON.stringify({config: report.config, engine_detail: detail, resources: resources}, null, 2);
+
+      return `
+        <section class="log-card ${forceOpen ? 'card-open' : ''}" id="card-${reportId}" data-status="${esc(report.status)}">
+          <button class="log-title-btn" onclick="toggle('${reportId}')">
+            <div class="log-main-info">
+              <div class="log-time-title">
+                <span>${esc(report.started_at || report.id)}</span>
+              </div>
+              <div class="log-meta-line">
+                <span>${esc(report.source || 'image')} 模式</span>
+                <span>•</span>
+                <span>${esc(input.count || 0)} 张输入图像</span>
+                <span>•</span>
+                <span style="color:var(--accent-blue-light); font-weight:700;">${esc((detail.engine || (report.config && report.config.requested_engine) || 'unknown'))}</span>
+              </div>
+            </div>
+            <span class="status-badge-lg ${isSuccess ? 'success' : 'failed'}">
+              <span class="indicator-dot ${isSuccess ? 'active' : 'error'}"></span>
+              ${isSuccess ? '成功' : '失败'}
+            </span>
+          </button>
+
+          <div id="detail-${reportId}" class="log-detail ${forceOpen ? 'open' : ''}">
+            <!-- KPI Summary Grid -->
+            <div class="metrics-grid">
+              <div class="metric-tile">
+                <span class="metric-tile-label">总计算耗时</span>
+                <span class="metric-tile-val" style="color:var(--accent-blue-light);">${ms(report.total_elapsed_ms)}</span>
+              </div>
+              <div class="metric-tile">
+                <span class="metric-tile-label">系统 CPU 均值</span>
+                <span class="metric-tile-val">${percent(resources.system_cpu_percent_approx)}</span>
+              </div>
+              <div class="metric-tile">
+                <span class="metric-tile-label">后端进程 CPU 占用</span>
+                <span class="metric-tile-val">${percent(resources.backend_process_cpu_capacity_percent_approx)}</span>
+              </div>
+              <div class="metric-tile">
+                <span class="metric-tile-label">输出全景图像尺寸</span>
+                <span class="metric-tile-val">${esc((report.output || {}).width || '-')} × ${esc((report.output || {}).height || '-')}</span>
+              </div>
+            </div>
+
+            <!-- Stages Breakdown & Timeline -->
+            <div class="section-title">阶段耗时、参数与特征数据</div>
+            ${renderTimelineBar(report)}
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="width:24%;">阶段名称</th>
+                  <th style="width:20%;">阶段耗时</th>
+                  <th>参数 / 特征数据</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${stageRows(report)}
+              </tbody>
+            </table>
+
+            <!-- Input & Output -->
+            <div class="section-title">
+              <span>输入与输出详情</span>
+              <button class="copy-btn" onclick="copyToClipboard('${esc(ioJson.replace(/'/g, "\\'"))}', this)">复制 JSON</button>
+            </div>
+            <div class="code-block-wrapper">
+              <pre class="code-json">${esc(ioJson)}</pre>
+            </div>
+
+            <!-- Engine, Accel & Resources Snapshot -->
+            <div class="section-title">
+              <span>引擎、加速与资源快照</span>
+              <button class="copy-btn" onclick="copyToClipboard('${esc(engineJson.replace(/'/g, "\\'"))}', this)">复制快照</button>
+            </div>
+            <div class="code-block-wrapper">
+              <pre class="code-json">${esc(engineJson)}</pre>
+            </div>
+
+            <div class="note-box">
+              <strong>系统说明：</strong>GPU 数据只读取系统安全暴露的 devfreq/sysfs 计数器；内核未提供时显示为空，不会伪造占用率。日志仅保留当前后端进程最近 30 次拼接记录，服务重启后清空。
+            </div>
+          </div>
+        </section>
+      `;
     };
-    function toggle(id) { document.getElementById('detail-' + id).classList.toggle('open'); }
+
+    function toggle(id) {
+      const detail = document.getElementById('detail-' + id);
+      const card = document.getElementById('card-' + id);
+      if (detail && card) {
+        detail.classList.toggle('open');
+        card.classList.toggle('card-open');
+      }
+    }
+
+    function setFilter(type, btn) {
+      currentFilter = type;
+      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      renderReports();
+    }
+
+    function renderReports() {
+      const id = new URLSearchParams(location.search).get('id');
+      let filtered = allReports;
+      if (currentFilter === 'success') {
+        filtered = allReports.filter(r => r.status === 'success');
+      } else if (currentFilter === 'failed') {
+        filtered = allReports.filter(r => r.status !== 'success');
+      }
+
+      if (!filtered.length) {
+        root.innerHTML = '<div class="empty-state">还没有匹配的拼接记录。完成一次图片或相机拼接后，这里会显示详细数据。</div>';
+        return;
+      }
+
+      root.innerHTML = filtered.map((report, index) => card(report, Boolean(id) || index === 0)).join('');
+    }
+
     async function loadLogs() {
       const id = new URLSearchParams(location.search).get('id');
       const response = await fetch('/api/stitch/logs' + (id ? '?id=' + encodeURIComponent(id) : ''), {cache:'no-store'});
       const data = await response.json().catch(() => ({}));
-      const reports = data.report ? [data.report] : (data.reports || []);
-      root.innerHTML = reports.length ? reports.map((report, index) => card(report, Boolean(id) || index === 0)).join('') : '<div class="empty">还没有拼接记录。完成一次图片或相机拼接后，这里会显示详细数据。</div>';
+      allReports = data.report ? [data.report] : (data.reports || []);
+      renderReports();
     }
+
     loadLogs();
   </script>
 </body>
