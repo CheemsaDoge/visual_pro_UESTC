@@ -555,7 +555,7 @@
         $('ipaddr').textContent = (status.ip_list && status.ip_list.length > 0) ? status.ip_list[0].ip : (status.ip || '-');
         $('uptime').textContent = status.uptime || '--';
         $('kernel').textContent = status.kernel || '--';
-        
+
         const wifiName = status.wifi || '未连';
         $('chip-wifi').textContent = wifiName.length > 12 ? wifiName.substring(0, 12) + '...' : wifiName;
         const isWifiConnected = status.wifi && status.wifi.includes('connected');

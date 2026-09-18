@@ -568,7 +568,7 @@
       const rail = $('ui-image-rail');
       rail.innerHTML = '';
       state.rawFiles = (data && data.files) ? data.files : [];
-      
+
       if (state.rawFiles.length === 0) {
         rail.innerHTML = '<div style="display:flex; align-items:center; justify-content:center; width:100%; color:var(--text-muted); font-size:0.88rem;">stitch_input 目录中暂无源图</div>';
         return;
