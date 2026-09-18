@@ -538,8 +538,12 @@
 
       // Acceleration HUD
       if (publicConfig && publicConfig.accel) {
-        const pMode = publicConfig.accel.preprocess ? publicConfig.accel.preprocess.mode : '';
-        const gMode = publicConfig.accel.geometry ? publicConfig.accel.geometry.mode : '';
+        const pMode = publicConfig.accel.preprocess
+          ? (publicConfig.accel.preprocess.mode || publicConfig.accel.preprocess.mode_tag || '')
+          : '';
+        const gMode = publicConfig.accel.geometry
+          ? (publicConfig.accel.geometry.mode || publicConfig.accel.geometry.mode_tag || '')
+          : '';
         const engine = (publicConfig.stitch && publicConfig.stitch.engine) || 'sequential';
 
         $('val-rga').textContent = pMode.includes('rga') ? 'ACTIVE' : (pMode || 'CPU');
