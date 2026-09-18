@@ -13,6 +13,19 @@
 
 相机节点号可能随启动变化，因此程序使用 `/dev/video-camera0` 这个动态别名，而不是把 `video22` 写死。
 
+## 2026-09-18 增量：拼接参数与诊断展示
+
+合并 `feature-parameter` 后新增的功能：
+
+1. 新增 `app/services/stitch_diagnostics.py`，为每次拼接生成一份诊断报告，包含输入输出尺寸、各阶段耗时、引擎参数、ORB 特征数据、fallback 情况和资源快照。
+2. 新增 `GET /api/stitch/logs`，可列出最近 30 次拼接或按 `id` 查单条；`/api/stitch/image` 与相机 stop 的响应都会带 `log_id` 和 `stitch_log`。
+3. 新增 `stitch_log.html` 展示页，入口有三处：首页第 5 张卡片、`stitch.html` 顶栏「日志」、拼接结果区「本次日志」。
+4. `StitchEngine` 基类增加分阶段记录能力，`builtin`/`sequential`/`scans` 三个引擎都接入。
+5. `metrics_service` 增加 `read_gpu()`，best-effort 采集 devfreq/sysfs 上的 GPU 频率与负载。
+6. `stitch.html` 结果区新增「展示全景图 / 展示拼接图像」切换，可在 Pannellum 全景与原始平面长图之间来回看。
+
+该增量不改变拼接算法本身，只增加可观测性；诊断数据全部存在内存，后端重启即清空。
+
 ## 当前配置
 
 以下值取自仓库内 `config.json`：
@@ -58,10 +71,12 @@ index.html
   -> POST /api/stitch/image
   -> stitch_routes.handle_post()
   -> stitch_service.run_image_stitch()
-  -> OpenCVStitchEngine.stitch()
+  -> StitchDiagnostics 开始记录
+  -> SequentialPanoEngine.stitch()（失败回退 OpenCVStitchEngine）
   -> 写入 stitch_output/stitched_*.jpg
-  -> 返回 result_url
-  -> stitch.html 的 showPanorama()
+  -> StitchDiagnostics.finish() 生成报告
+  -> 返回 result_url + log_id + stitch_log
+  -> stitch.html 的 showStitchResult()
   -> 本地 pannellum.js 显示全景图
 ```
 
@@ -72,7 +87,8 @@ index.html
 3. `run_image_stitch()` 先查 `get_stitch_backend_status()`；若 payload 带 `images`（base64）则走 `storage_service.decode_image_payload()` 落盘到 `_stitch_work/` 并在结束后删除，若带 `server_files` 则走 `resolve_stitch_input_files()`，只接受 `stitch_input` 目录内允许扩展名的图片。
 4. 目前配置为 `sequential`，所以 `get_stitch_engine()` 创建 `app/stitch_engine/sequential_engine.py` 的 `SequentialPanoEngine`，并把 `OpenCVStitchEngine` 作为 fallback 一起装配。
 5. `SequentialPanoEngine.stitch()` 先把输入按 1920 宽度上限缩放并做 `bilateralFilter`，再逐对调用 `common.stitch_two_images_with_orb()`（ORB 特征 → `findHomography` → `GeometryEngine.warp_perspective()` → 多带或均值融合）。任一步失败就整体回退到 `OpenCVStitchEngine`：OpenCV Panorama Stitcher 正序、反序各试一次，恰好两张图时再退到 ORB 路径。
-6. 成功后统一做 USM 锐化 + `fastNlMeansDenoisingColored` 后处理，写入 `stitch_output/stitched_<时间戳>_<8位hex>.jpg`，后端返回 `result_url`、`engine`、`actual_engine`；前端将 `result_url` 交给 Pannellum。
+6. 成功后统一做 USM 锐化 + `fastNlMeansDenoisingColored` 后处理，写入 `stitch_output/stitched_<时间戳>_<8位hex>.jpg`，后端返回 `result_url`、`engine`、`actual_engine`，以及 `log_id` 和 `stitch_log`；前端把 `result_url` 交给 Pannellum，并记住 `log_id` 供「本次日志」按钮跳转。
+7. 整个过程被 `StitchDiagnostics` 包裹：记录输入文件尺寸、引擎各阶段耗时、ORB 特征点/匹配数/内点数、是否触发 fallback，以及拼接前后的 CPU、内存、GPU、温度快照，存入进程内最近 30 条的报告环。
 
 ## 相机采集与拼接链
 
@@ -93,9 +109,9 @@ stitch.html?mode=camera
 
 用户点“停止”
   -> stop_camera_session()
-  -> 至少两张已拍图片时，调用 run_image_stitch()
-  -> 得到 result_url
-  -> showPanorama()
+  -> 至少两张已拍图片时，调用 run_image_stitch({source: "camera"})
+  -> 得到 result_url + log_id + stitch_log
+  -> showStitchResult()
 ```
 
 关键文件与调用：
@@ -110,13 +126,30 @@ stitch.html?mode=camera
 - `app/services/preprocess_service.py:get_preprocess_engine()`：当前返回 `RgaPreprocessEngine`（模块级单例）。
 - `app/preprocess/rga_engine.py`：通过 ctypes 调用 `native/rga/libmyui_rga.so`，完成 NV12 到 BGR 的 RGA 转换；预览路径会让 RGA 顺带缩放（`convert_resize_only_cpu_rotate`），1920x1080 的 90° 旋转由 CPU 补做（`post_rotate_cpu=True`）。
 - `camera_service.capture_camera_snapshot()`：复制当前帧 → `process_for_save()` → 写入 `stitch_input/camera_<session>_<序号>.jpg`。
-- `camera_service.stop_camera_session()`：置停止事件并 join 两个线程；图片达到两张后复用 `stitch_service.run_image_stitch()`，因此相机和静态图片使用同一套拼接流程。
+- `camera_service.stop_camera_session()`：置停止事件并 join 两个线程；图片达到两张后复用 `stitch_service.run_image_stitch()` 并传 `source="camera"`，因此相机和静态图片使用同一套拼接流程与同一套诊断日志，响应里也会带 `log_id` / `stitch_log`。
+
+## 拼接日志展示链
+
+```text
+index.html 第 5 张卡片 / stitch.html 顶栏「日志」/ 结果区「本次日志」
+  -> stitch_log.html[?id=<log_id>]
+  -> GET /api/stitch/logs[?id=...]
+  -> stitch_routes.handle_get()
+  -> stitch_diagnostics.get_report() 或 list_reports()
+  -> 页面渲染耗时指标、阶段表格、引擎与资源快照
+```
+
+- 带 `?id=` 时只请求单条并默认展开；不带时列出最近 30 条，默认展开第一条。
+- 页面把 service 层 `stages` 与 `engine_detail.stages` 合并成一张表，逐阶段显示耗时与参数 JSON。
+- 所有插值都经过 HTML 转义函数处理；数值为 `null` 时显示「不可用」而不是 0。
+- 页面底部明确写了两条限制：GPU 只读系统安全暴露的 devfreq/sysfs 计数器，内核未提供时显示为空；日志只保留当前后端进程最近 30 次，服务重启后清空。
 
 ## 全景展示链
 
 ```text
 runStitch() / stopCam()
-  -> result_url
+  -> showStitchResult(result_url, log_id)   # 记住 URL 与日志 ID
+  -> showResult('panorama')
   -> showPanorama(result_url)
   -> GET /api/config/public
   -> system_routes.get_public_config()
@@ -124,8 +157,9 @@ runStitch() / stopCam()
 ```
 
 - `app/routes/system_routes.py:get_public_config()` 将 `config.json` 中的 `stitch.viewer` 下发给页面。
-- `stitch.html:getSafePanoramaUrl()` 只允许加载本站 `/stitch_output/` 下的结果图。
+- `stitch.html:getSafePanoramaUrl()` 只允许加载本站 `/stitch_output/` 下的结果图；全景和平面两种展示都走这个校验。
 - `stitch.html:showPanorama()` 调用本地 `vendor/pannellum/pannellum.js`。
+- `showResult('image')` 是新增的平面展示模式：销毁 Pannellum 实例，直接把结果图塞进 `<img>`，状态栏显示「拼接图像展示 · 完整画面」。适合确认拼接接缝和整体构图。
 - Pannellum 参数为 `type=equirectangular`、`haov=360`、`vaov=60`；它只提供横向一圈查看和有限的上下查看。
 
 ## 需要知道的行为
@@ -134,5 +168,8 @@ runStitch() / stopCam()
 - 相机预览与保存图片都经过 RGA；拼接的特征匹配、融合、后处理仍主要由 OpenCV 在 CPU 上完成，只有 ORB 路径里的 `warpPerspective` 可能走 direct OpenCL。
 - `stitch.html` 优先用 `/api/camera/stream` 的 MJPEG；`<img>` 触发 `onerror` 时才降级成 `/api/camera/frame.jpg` 每 100ms 轮询。所以画面卡顿要先确认走的是哪条路径。
 - 同一时间只允许一个相机会话，`CAMERA_RUNTIME` 是模块级单例；重复 `start` 返回 `camera session already running`（HTTP 409）。
+- 拼接失败时响应同样带 `log_id` 和 `stitch_log`，可以直接打开日志页定位是哪一阶段失败、ORB 匹配点够不够。
+- 拼接日志只在内存里保留最近 30 条，后端重启就没了；要留证据需自行保存响应里的 `stitch_log`。
+- 诊断会对每张输入图和输出图额外做一次 `cv2.imread()` 取尺寸，大图多图时这部分开销会计入总耗时。
 - 拼接结果必须是水平环拍长图。`vaov=60` 只是当前初始估计，待有镜头参数或实测数据后再调整。
 - 改 `config.json` 后必须重启后端，四个引擎工厂都只初始化一次。

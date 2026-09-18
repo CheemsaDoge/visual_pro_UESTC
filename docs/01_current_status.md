@@ -1,14 +1,15 @@
 # 01 当前状态
 
-最近更新：2026-09-18（按当前代码重新核对）
+最近更新：2026-09-18（合并 `feature-parameter` 后按代码重新核对）
 
 ## 代码现状速查
 
 | 项 | 真实值 |
 | --- | --- |
 | `backend.py` | 227 行，仅 HTTP transport / 静态文件 / MJPEG / 单帧 JPEG |
-| 后端模块 | `app/` 下 44 个 Python 文件，合计 5758 行 |
+| 后端模块 | `app/` 下 45 个 Python 文件，合计 6081 行 |
 | 最大模块 | `app/services/camera_service.py` 1114 行 |
+| 前端页面 | `index.html` / `stitch.html` / `wifi.html` / `stitch_log.html` |
 | 拼接引擎 | `builtin` / `sequential` / `scans` / `script` 四种 |
 | `config.json` 生效引擎 | `stitch.engine=sequential`，`accel.preprocess=rga`，`accel.geometry=opencl`，`accel.selector=off` |
 | 测试用例 | 12 条（unit 11 + integration 1）+ 4 个板端 smoke 脚本 + 1 个 benchmark |
@@ -19,7 +20,7 @@
 - 模块目录已建立：
   - `app/config.py`、`app/schemas.py`
   - `app/routes/`（camera / stitch / system / wifi）
-  - `app/services/`（camera / stitch / storage / geometry / preprocess / keyframe / metrics）
+  - `app/services/`（camera / stitch / storage / geometry / preprocess / keyframe / metrics / stitch_diagnostics）
   - `app/capture/`（gst_capture / gst_raw_nv12_capture / v4l2_capture）
   - `app/preprocess/`、`app/geometry/`、`app/selector/`、`app/stitch_engine/`、`app/utils/`
 - 基础数据对象 `FramePacket`、`ProcessedFrame` 位于 `app/schemas.py`；`FramePacket` 含 `stride_w`、`stride_h`、`timestamp_ns`、`buffer_size`、`stride_inferred`，并在 `__post_init__` 中自动补齐。
@@ -39,6 +40,14 @@
 - `config.json` 已有 `accel` 和 `selector.cpu_basic` 配置，另有 `stitch.viewer` 下发给 Pannellum。
 - 已有 `tests/unit/`、`tests/integration/`、`tests/smoke/`、`tests/benchmark/run_benchmark.py`。
 - 离线 Pannellum 2.5.7 位于 `vendor/pannellum/`，板端展示全景不需要联网。
+- 拼接诊断日志（2026-09-18 合并 `feature-parameter`）：
+  - 新增 `app/services/stitch_diagnostics.py`（143 行）与 `stitch_log.html`（58 行）。
+  - `run_image_stitch()` 全程被 `StitchDiagnostics` 包裹，成功和失败都返回 `log_id` + `stitch_log`。
+  - `StitchEngine` 基类新增 `_begin_run_detail()` / `_record_stage()` / `get_last_run_detail()`，三个 OpenCV 系引擎都记录了分阶段耗时与参数。
+  - `stitch_two_images_with_orb()` 增加 `telemetry` 出参，回传 ORB 关键点数、good match 数、RANSAC 内点数、画布尺寸与耗时。
+  - `metrics_service` 增加 `read_gpu()`，从 `/sys/class/devfreq/*` best-effort 采集 GPU 频率与负载，并纳入 `snapshot()`。
+  - 报告存在进程内 `deque(maxlen=30)`，后端重启即清空，不落盘。
+  - 前端：`index.html` 新增第 5 张导航卡片，`stitch.html` 结果区新增「展示全景图 / 展示拼接图像 / 本次日志」三个按钮，缩略图补了 `role`/`tabIndex`/键盘选择支持。
 - `native/rga/` 已新增最小 wrapper 源码、头文件和 Makefile：
   - `native/rga/myui_rga.cpp`
   - `native/rga/myui_rga.h`
@@ -62,8 +71,9 @@ python3 tests/benchmark/run_benchmark.py --preprocess cpu --selector off
 
 2026-09-18 本地复核结果（Windows，Python 3.12.6，环境未装 `cv2`）：
 
-- `python -m py_compile backend.py stitch_demo.py $(find app tests -name '*.py')`：全部通过，退出码 0。
+- `python -m py_compile backend.py stitch_demo.py $(find app tests -name '*.py')`：全部通过，退出码 0（合并 `feature-parameter` 后重跑仍通过）。
 - `python -m unittest discover tests`：`tests.unit.test_opencl_geometry` 4 条通过；其余 4 个模块在导入阶段报 `ModuleNotFoundError: No module named 'cv2'`。这属于环境缺 OpenCV，不是代码缺陷；需要完整跑测试时按 `requirements.txt` 安装 `numpy` 与 `opencv-python`。
+- 新增的拼接诊断链路尚未跑过端到端验证（需要 `cv2` 才能真正执行一次拼接），因此 `stitch_log.html` 的实际渲染效果与 `resources` 各字段的真实取值仍待在装有 OpenCV 的环境或板端确认。
 - 仓库当前没有 `reports/` 目录，benchmark 首次运行会自行创建。
 
 2026-05-08 开发机已完成一次验证：
@@ -171,6 +181,7 @@ GET：
 - `/api/stitch/status`
 - `/api/stitch/input-list`
 - `/api/stitch/output-list`
+- `/api/stitch/logs`
 - `/api/camera/status`
 - `/api/camera/frame.jpg`
 - `/api/camera/stream`
@@ -194,6 +205,11 @@ POST：
 - `SequentialPanoEngine` 依赖 ORB 特征匹配质量，任一相邻对失败就整条序列失败并回退 `OpenCVStitchEngine`。
 - `RknnSelector` 只是占位，直接委托 `CpuSelector`，未接真实 RKNN 推理。
 - 四个引擎工厂都是模块级单例，改 `config.json` 后必须重启后端才生效。
+- 拼接诊断日志只存在进程内存（`deque(maxlen=30)`），后端重启即清空，也不写文件；需要长期留存必须自己导出 `stitch_log` 字段。
+- `StitchEngine.last_run_detail` 是引擎实例属性，而引擎是单例，所以只保留最近一次运行的数据；并发拼接会互相覆盖，当前没有加锁。
+- `StitchDiagnostics.image_file_details()` 与 `finish()` 会对每张输入图和输出图各做一次 `cv2.imread()` 以取尺寸，这是纯诊断开销，大图多图时会明显增加单次拼接的额外耗时。
+- `resources.backend_process_cpu_capacity_percent_approx` 用 `process_time` 增量除以墙钟，多线程下可能超过 100%，不要当成单核占用率读。
+- GPU 数据是 best-effort 的 devfreq/sysfs 采样，内核未暴露计数器时返回 `{"devices": [], "available": false}`，不要当成“GPU 未被使用”的证据。
 - `wifi_routes` 依赖 `pty`，Windows 上自动降级为“仅 Linux 开发板可用”。
 
 ## 当前默认主线

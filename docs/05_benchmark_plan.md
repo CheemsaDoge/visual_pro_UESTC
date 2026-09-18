@@ -37,7 +37,7 @@
 - `stitch_total_ms`：调用 `StitchEngine.stitch()` 的总耗时；`--skip-stitch` 时为 `0.0`。
 - `total_elapsed_ms`：从快照开始到结束的整轮耗时。
 - `cpu_percent`：`metrics_service.cpu_percent_between()` 基于 `/proc/stat` 估算的全系统 CPU 使用率；非 Linux 上为 `null`。
-- `memory` / `process_memory` / `thermal`：分别来自 `/proc/meminfo`、`/proc/<pid>/status`（`VmRSS`/`VmHWM`/`VmSize`/`Threads`）、thermal zone。
+- `memory` / `process_memory` / `thermal`：分别来自 `/proc/meminfo`、`/proc/<pid>/status`（`VmRSS`/`VmHWM`/`VmSize`/`Threads`）、thermal zone。`snapshot()` 现在还会额外采集 `gpu`（devfreq/sysfs），但 benchmark 报告目前只把它放进 `snapshots.before/after`，没有单独的顶层 GPU 字段。
 - `rga_wrapper_available`：是否加载到 `libmyui_rga.so` 且 `myui_rga_available()` 成功。
 - `rga_active_calls` / `rga_fallback_calls`：本轮真实 RGA 成功次数与回退 CPU 次数。
 - `rga`：嵌套块，额外含 `require_rga`、`lib_path`、`lib_version`、`load_error`。
@@ -104,7 +104,8 @@ python3 tests/benchmark/run_benchmark.py \
 
 ## 已知局限
 
-- `metrics_service` 全部依赖 Linux `/proc`、`/sys`，Windows 上 `cpu_percent` 为 `null`、`memory`/`thermal` 为空或带 `error` 字段。
+- `metrics_service` 全部依赖 Linux `/proc`、`/sys`，Windows 上 `cpu_percent` 为 `null`、`memory`/`thermal`/`gpu` 为空或带 `error` 字段。
 - benchmark 直接 new 引擎实例，不经过 `app/services/*` 单例工厂，因此它反映的是命令行参数而不是 `config.json` 当前生效的 service 状态。
+- benchmark 不经过 `run_image_stitch()`，所以**不会**产生 `/api/stitch/logs` 里的诊断报告。想看分阶段耗时与 ORB 特征数据，要走 HTTP 拼接接口再看日志页；两者的数据口径不同，不要混用。
 - `--stitch-engine sequential` 在 benchmark 里构造为 `SequentialPanoEngine(opencv)`，即把 `OpenCVStitchEngine` 作为第一个位置参数（`geometry_engine`）传入，与 `stitch_service.create_stitch_engine()` 的关键字装配方式不同；解读 sequential 的 benchmark 结果时要注意这一差异。
 - benchmark 初版用于结构化记录，不代表最终性能结论。

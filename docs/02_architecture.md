@@ -10,9 +10,9 @@
 
 - `camera_routes.py` 进入 `camera_service.py`，`FramePacket` 也在这条链路里产生，不在 routes。
 - `/api/camera/stream` 和 `/api/camera/frame.jpg` 由 `backend.py` 直接处理（`Handler.send_camera_stream()` / `Handler.send_camera_frame_jpeg()`），数据来自 `camera_service.get_camera_stream_frame()` 的运行时缓存。
-- `stitch_routes.py` 进入 `stitch_service.py`，拼接时会带上 `storage_service.py`、`StitchEngine` 和 `GeometryEngine`。
+- `stitch_routes.py` 进入 `stitch_service.py`，拼接时会带上 `storage_service.py`、`StitchEngine` 和 `GeometryEngine`；`/api/stitch/logs` 则直接读 `stitch_diagnostics.py` 的进程内报告环。
 - `system_routes.py` 和 `wifi_routes.py` 现在都还保留 route-local logic，不是纯粹转发到 service；`wifi_routes.py` 直接实现 ConnMan 交互，`system_routes.py` 直接跑 `hostname`/`uname`/`ip` 等命令。
-- `camera_service.stop_camera_session()` 在拍到 ≥2 张图时会直接调用 `stitch_service.run_image_stitch()`，所以相机和静态图片共用同一套拼接流程。
+- `camera_service.stop_camera_session()` 在拍到 ≥2 张图时会直接调用 `stitch_service.run_image_stitch()`（传 `source="camera"`），所以相机和静态图片共用同一套拼接流程与同一套诊断日志。
 
 ## 当前代码分层
 
@@ -21,7 +21,8 @@ backend.py                 # HTTP / static / 预览流（MJPEG + 单帧 JPEG）
 app/config.py              # config.json 加载、归一化、导出常量
 app/schemas.py             # FramePacket / ProcessedFrame
 app/routes/                # camera / stitch / system / wifi 的 JSON 路由分发
-app/services/              # camera / stitch / storage / geometry / preprocess / keyframe / metrics
+app/services/              # camera / stitch / storage / geometry / preprocess / keyframe
+                           # + metrics（/proc、/sys 采样）+ stitch_diagnostics（拼接报告）
 app/capture/               # gst_capture / gst_raw_nv12_capture / v4l2_capture
 app/preprocess/            # cpu_engine / rga_engine
 app/geometry/              # cpu_geometry / opencl_geometry / opencl_runtime
@@ -31,6 +32,7 @@ app/utils/                 # log / timing
 native/rga/                # libmyui_rga.so 的 C++ wrapper 源码与 Makefile
 tests/                     # unit / integration / smoke / benchmark
 vendor/pannellum/          # 离线 Pannellum 2.5.7
+index.html stitch.html wifi.html stitch_log.html   # 四个无框架页面
 ```
 
 ## HTTP 分发顺序
@@ -70,3 +72,27 @@ POST_ROUTES = system_routes.handle_post, wifi_routes.handle_post, camera_routes.
 - `_camera_preview_encode_loop()`：按 `preview_fps` 节流，调用 `process_for_preview()` 生成 `preview_jpeg`，写入 `last_frame_jpeg` 供 `/api/camera/stream` 与 `/api/camera/frame.jpg` 读取。
 
 `require_rga=true` 时，`_enforce_required_rga()` 会在 `mode_tag != "rga_active"` 时抛错，用于生产验收防止静默 fallback。
+
+## 拼接诊断链路
+
+`run_image_stitch()` 在引擎调度外面包了一层诊断，代码位置 `app/services/stitch_service.py` 与 `app/services/stitch_diagnostics.py`：
+
+```text
+run_image_stitch()
+  -> StitchDiagnostics(request_id, source, image_paths, config_snapshot)
+       config_snapshot = requested_engine + auto_crop + geometry/preprocess/backend 三个 status
+  -> with diagnostics.stage("engine_dispatch", ...)
+       script 引擎  -> run_stitch_script()，engine_detail 只记 script_path/timeout
+       其他引擎      -> stitch_image_files() -> engine.get_last_run_detail()
+  -> diagnostics.finish(ok, message, output_path, engine_detail)
+       前后各做一次 metrics_service.snapshot()，算 CPU/内存/GPU/温度差异
+  -> 报告存入进程内 deque(maxlen=30)，并随响应返回 log_id + stitch_log
+```
+
+引擎侧的阶段数据来自 `StitchEngine` 基类新增的三个方法（`app/stitch_engine/base.py`）：
+
+- `_begin_run_detail(image_paths, auto_crop)`：每次 `stitch()` 开头重置 `self.last_run_detail`。
+- `_record_stage(name, started, **detail)`：追加一条带 `elapsed_ms` 的阶段记录。
+- `get_last_run_detail()`：返回 deepcopy，供 service 层取用。
+
+注意 `last_run_detail` 是引擎实例属性，而引擎是模块级单例，所以它只保留**最近一次**运行的数据；跨请求的历史要从 `stitch_diagnostics` 的报告环取。并发拼接时两个请求会互相覆盖这个字段，当前实现没有加锁保护。

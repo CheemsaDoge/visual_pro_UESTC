@@ -1,12 +1,12 @@
 # 08 新会话交接
 
-> 头部四节（一页概括 / 当前架构 / 当前成果 / 当前问题）已于 2026-09-18 按代码重新核对。下面带日期标题的章节是历史时间线，保留原样，不代表当前状态。
+> 头部四节（一页概括 / 当前架构 / 当前成果 / 当前问题）已于 2026-09-18 按代码重新核对（含 `feature-parameter` 合并后的拼接诊断功能）。下面带日期标题的章节是历史时间线，保留原样，不代表当前状态。
 
 ## 一页概括
 
 这是 RK3588 图像拼接 GUI 项目。主线是 **RGA first → GPU next → NPU later**。`backend.py` 已经是薄 HTTP 入口（227 行），核心在 `app/`，预处理、几何、关键帧选择、拼接四类引擎都可插拔并带 fallback。
 
-当前阶段位置：RGA 已真实生效，direct OpenCL 只覆盖 `warpPerspective`，NPU 仍是占位。
+当前阶段位置：RGA 已真实生效，direct OpenCL 只覆盖 `warpPerspective`，NPU 仍是占位；最近新增了拼接诊断日志子系统，用于把耗时、参数、特征数据和资源占用呈现给用户。
 
 ## 当前架构
 
@@ -14,17 +14,19 @@
 backend.py                 227 行，HTTP + 静态 + MJPEG/单帧预览
 app/config.py              471 行，config.json 加载与常量导出
 app/schemas.py             FramePacket / ProcessedFrame
-app/routes/                camera(49) / stitch(38) / system(212) / wifi(258)
-app/services/              camera(1114) / stitch(180) / storage(141) / metrics(137)
+app/routes/                camera(49) / stitch(48) / system(212) / wifi(258)
+app/services/              camera(1114) / stitch(211) / storage(141) / metrics(177)
+                           + stitch_diagnostics(143) 拼接诊断报告
                            + geometry / preprocess / keyframe 三个单例工厂
 app/capture/               gst_capture / gst_raw_nv12_capture(427) / v4l2_capture(151)
 app/preprocess/            cpu_engine(162) / rga_engine(569)
 app/geometry/              cpu_geometry / opencl_geometry(81) / opencl_runtime(505)
 app/selector/              off / cpu_selector(148) / rknn_selector
-app/stitch_engine/         common(271) / opencv(111) / sequential(101) / scans(118)
+app/stitch_engine/         base(48) / common(296) / opencv(129) / sequential(118) / scans(135)
 native/rga/                myui_rga.cpp + .h + Makefile + 已构建的 libmyui_rga.so
 tests/                     unit 11 条 + integration 1 条 + smoke 4 脚本 + benchmark
 vendor/pannellum/          离线 Pannellum 2.5.7
+前端                        index.html / stitch.html / wifi.html / stitch_log.html
 ```
 
 ## 当前成果
@@ -37,8 +39,9 @@ vendor/pannellum/          离线 Pannellum 2.5.7
 - 拼接：四种引擎均已实现（`builtin` / `sequential` / `scans` / `script`），`sequential` 是当前 `config.json` 的生效值。
 - benchmark 输出 `preprocess_mode`、`preprocess_actual`、`preprocess_reason`、`rga_wrapper_available`、`rga_active_calls`、`rga_fallback_calls`、`geometry_mode`、`selector_mode`、`stitch_mode` 及 CPU/内存/温度快照，支持 `--feed-format`、`--skip-stitch`、`--rga-lib`、`--require-rga`。
 - 相机节点动态化：`/dev/video-camera0` 别名 + `start_myui.sh` 出帧探测 + 多候选打开，不再硬编码 `/dev/video44`。
+- 拼接可观测性（2026-09-18 合并 `feature-parameter`）：每次拼接生成一份诊断报告，含输入输出尺寸、引擎分阶段耗时、ORB 特征点/匹配/内点数、fallback 原因、CPU/内存/GPU/温度前后快照；通过 `GET /api/stitch/logs` 和 `stitch_log.html` 呈现，响应里也直接带 `log_id` + `stitch_log`。
 - 启动链已验证：`/etc/init.d/S51myui -> /userdata/myui/start_myui.sh -> /userdata/myui/backend.py`，重启后 `myui python running`，Chromium kiosk 指向 `http://127.0.0.1:18080/index.html`。
-- 2026-09-18 本地复核：全量 `py_compile` 通过；`tests.unit.test_opencl_geometry` 4 条通过；其余 4 个测试模块因当前环境缺 `cv2` 而导入失败。
+- 2026-09-18 本地复核：合并后全量 `py_compile` 仍通过；`tests.unit.test_opencl_geometry` 4 条通过；其余 4 个测试模块因当前环境缺 `cv2` 而导入失败，拼接诊断链路尚未端到端跑通。
 
 ## 当前问题
 
@@ -49,9 +52,11 @@ vendor/pannellum/          离线 Pannellum 2.5.7
 - 板端缺 `im2d.h`/`RgaApi.h` 和 `g++`，不能在板上重编 wrapper，只能同步 PC 侧构建产物。
 - `RknnSelector` 仍是占位，直接委托 `CpuSelector`。
 - `config.json` 与 `app/config.py:DEFAULT_CONFIG` 在 `stitch.engine`、`accel.geometry`、`camera.preview_fps` 上不一致，读默认值时容易出错。
-- 12 条测试里 8 条硬依赖 `cv2`，没有 skip 保护，缺 OpenCV 的环境会直接报导入错误。
+- 12 条测试里 8 条硬依赖 `cv2`，没有 skip 保护，缺 OpenCV 的环境会直接报导入错误；新增的 `stitch_diagnostics` 与引擎分阶段记录目前没有任何测试覆盖。
+- 拼接诊断报告只存进程内存（`deque(maxlen=30)`），重启即丢；`StitchEngine.last_run_detail` 是单例实例属性，并发拼接会互相覆盖且未加锁。
+- 诊断为取尺寸会对每张输入图和输出图各做一次 `cv2.imread()`，属于纯观测开销，大图多图时会拉长单次拼接耗时。
 - `/dev/video31`（第二路 sensor / `rkisp1`）仍不可用，属于板级 DTS/供电/复位/连接问题，不是本仓库能修的范围。
-- `/api/stitch/output-clear` 后端已实现，但三个前端页面都没有调用入口。
+- `/api/stitch/output-clear` 后端已实现，但四个前端页面都没有调用入口。
 
 
 ## RGA 下一轮实现路线
@@ -140,6 +145,8 @@ backend.py 是薄 HTTP 入口（227 行），核心在 app/，四类引擎可插
 - OpenCL 只覆盖 warpPerspective（ctypes -> libOpenCL.so，不是 cv2.ocl）；remap 仍是 CPU。
   几何层只在 ORB 路径被调用，cv2.Stitcher 成功时会绕过它。
 - RknnSelector 仍是占位，直接委托 CpuSelector。
+- 拼接诊断日志已接入：每次拼接返回 log_id + stitch_log，页面在 stitch_log.html。
+  报告只存内存（最近 30 条），后端重启即清空；该子系统暂无测试覆盖。
 - config.json 生效值：stitch.engine=sequential、accel.preprocess=rga、accel.geometry=opencl、accel.selector=off。
   注意 app/config.py 的 DEFAULT_CONFIG 与之不同（builtin / cpu），只在配置缺字段时生效。
 - 相机节点用动态别名 /dev/video-camera0，不要假设 /dev/video44 存在。
