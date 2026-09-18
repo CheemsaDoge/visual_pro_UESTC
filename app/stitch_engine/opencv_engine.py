@@ -35,7 +35,7 @@ class OpenCVStitchEngine(StitchEngine):
         started = time.perf_counter()
         if auto_crop:
             panorama = crop_nonzero_area(panorama, cv2)
-        panorama = postprocess_image(panorama, cv2)
+        panorama = postprocess_image(panorama, cv2, geometry_engine=self.geometry_engine)
         ok = save_result_image(output_path, panorama, cv2)
         self._record_stage("postprocess_and_save", started, output_width=int(panorama.shape[1]), output_height=int(panorama.shape[0]), saved=bool(ok))
         return (True, "ok") if ok else (False, "failed to save result")
@@ -101,7 +101,7 @@ class OpenCVStitchEngine(StitchEngine):
             if not ok:
                 return False, result
             save_started = time.perf_counter()
-            panorama = postprocess_image(result, cv2)
+            panorama = postprocess_image(result, cv2, geometry_engine=self.geometry_engine)
             saved = save_result_image(output_path, panorama, cv2)
             self._record_stage("postprocess_and_save", save_started, output_width=int(panorama.shape[1]), output_height=int(panorama.shape[0]), saved=bool(saved))
             return (True, "ok") if saved else (False, "failed to save result")

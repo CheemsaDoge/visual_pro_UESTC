@@ -62,7 +62,12 @@ class SequentialPanoEngine(StitchEngine):
             current = crop_nonzero_area(current, cv2)
         postprocess_detail = {}
         postprocess_started = time.perf_counter()
-        current = postprocess_image(current, cv2, telemetry=postprocess_detail)
+        current = postprocess_image(
+            current,
+            cv2,
+            geometry_engine=self.geometry_engine,
+            telemetry=postprocess_detail,
+        )
         self._record_stage("postprocess", postprocess_started, **postprocess_detail)
         return True, current
 

@@ -98,6 +98,77 @@ __kernel void warp_perspective_bgr(
         dst[dst_idx + c] = (uchar)(clipped + 0.5f);
     }
 }
+
+__kernel void linear_blend_bgr(
+    __global const uchar* base,
+    __global const uchar* warped,
+    __global const uchar* mask1,
+    __global const uchar* mask2,
+    __global uchar* out,
+    int pixel_count
+) {
+    int index = get_global_id(0);
+    if (index >= pixel_count) {
+        return;
+    }
+    int offset = index * 3;
+    if (mask2[index] == 0) {
+        out[offset] = base[offset];
+        out[offset + 1] = base[offset + 1];
+        out[offset + 2] = base[offset + 2];
+    } else if (mask1[index] == 0) {
+        out[offset] = warped[offset];
+        out[offset + 1] = warped[offset + 1];
+        out[offset + 2] = warped[offset + 2];
+    } else {
+        out[offset] = (uchar)(((int)base[offset] + (int)warped[offset]) / 2);
+        out[offset + 1] = (uchar)(((int)base[offset + 1] + (int)warped[offset + 1]) / 2);
+        out[offset + 2] = (uchar)(((int)base[offset + 2] + (int)warped[offset + 2]) / 2);
+    }
+}
+
+inline uchar sample_bgr_clamped(
+    __global const uchar* src,
+    int width,
+    int height,
+    int stride,
+    int x,
+    int y,
+    int channel
+) {
+    x = max(0, min(width - 1, x));
+    y = max(0, min(height - 1, y));
+    return src[y * stride + x * 3 + channel];
+}
+
+__kernel void unsharp_bgr(
+    __global const uchar* src,
+    int width,
+    int height,
+    int src_stride,
+    __global uchar* dst,
+    int dst_stride
+) {
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+    if (x >= width || y >= height) {
+        return;
+    }
+    int weights[5] = {1, 4, 6, 4, 1};
+    int offset = y * dst_stride + x * 3;
+    for (int channel = 0; channel < 3; ++channel) {
+        int sum = 0;
+        for (int ky = -2; ky <= 2; ++ky) {
+            for (int kx = -2; kx <= 2; ++kx) {
+                sum += weights[kx + 2] * weights[ky + 2]
+                    * (int)sample_bgr_clamped(src, width, height, src_stride, x + kx, y + ky, channel);
+            }
+        }
+        float blur = (float)sum / 256.0f;
+        float sharpened = 1.3f * (float)src[y * src_stride + x * 3 + channel] - 0.3f * blur;
+        dst[offset + channel] = convert_uchar_sat_rte(sharpened);
+    }
+}
 """
 
 
@@ -116,6 +187,7 @@ class DirectOpenCLRuntime:
         self.queue = None
         self.program = None
         self.kernel = None
+        self.kernels = {}
         self._init_types()
         try:
             self.lib = ctypes.CDLL(self.lib_name)
@@ -357,9 +429,12 @@ class DirectOpenCLRuntime:
         rc = self.lib.clBuildProgram(self.program, 1, ctypes.byref(self.device), None, None, None)
         if rc != CL_SUCCESS:
             raise RuntimeError(f"clBuildProgram rc={int(rc)} log={self._get_build_log(self.program, self.device)}")
-        self.kernel = self.lib.clCreateKernel(self.program, b"warp_perspective_bgr", ctypes.byref(err))
-        if not self.kernel or err.value != CL_SUCCESS:
-            raise RuntimeError(f"clCreateKernel rc={int(err.value)}")
+        for kernel_name in ("warp_perspective_bgr", "linear_blend_bgr", "unsharp_bgr"):
+            kernel = self.lib.clCreateKernel(self.program, kernel_name.encode("ascii"), ctypes.byref(err))
+            if not kernel or err.value != CL_SUCCESS:
+                raise RuntimeError(f"clCreateKernel({kernel_name}) rc={int(err.value)}")
+            self.kernels[kernel_name] = kernel
+        self.kernel = self.kernels["warp_perspective_bgr"]
         self.available = True
         self.reason = "ok"
 
@@ -395,10 +470,118 @@ class DirectOpenCLRuntime:
             raise RuntimeError(f"clCreateBuffer rc={int(err.value)} size={int(size_bytes)}")
         return buf
 
-    def _set_kernel_arg(self, index: int, value) -> None:
-        rc = self.lib.clSetKernelArg(self.kernel, self.cl_uint(index), self.size_t(ctypes.sizeof(value)), ctypes.byref(value))
+    def _set_kernel_arg(self, index: int, value, *, kernel=None) -> None:
+        target = kernel or self.kernel
+        rc = self.lib.clSetKernelArg(target, self.cl_uint(index), self.size_t(ctypes.sizeof(value)), ctypes.byref(value))
         if rc != CL_SUCCESS:
             raise RuntimeError(f"clSetKernelArg[{index}] rc={int(rc)}")
+
+    def _write_buffer(self, buffer, image, label: str) -> None:
+        rc = self.lib.clEnqueueWriteBuffer(
+            self.queue,
+            buffer,
+            self.cl_bool(1),
+            0,
+            self.size_t(image.nbytes),
+            image.ctypes.data_as(ctypes.c_void_p),
+            0,
+            None,
+            None,
+        )
+        if rc != CL_SUCCESS:
+            raise RuntimeError(f"clEnqueueWriteBuffer({label}) rc={int(rc)}")
+
+    def _read_buffer(self, buffer, image) -> None:
+        rc = self.lib.clEnqueueReadBuffer(
+            self.queue,
+            buffer,
+            self.cl_bool(1),
+            0,
+            self.size_t(image.nbytes),
+            image.ctypes.data_as(ctypes.c_void_p),
+            0,
+            None,
+            None,
+        )
+        if rc != CL_SUCCESS:
+            raise RuntimeError(f"clEnqueueReadBuffer rc={int(rc)}")
+
+    def linear_blend(self, base: Any, warped: Any, mask1: Any, mask2: Any):
+        """Blend a BGR pair on the OpenCL device using the existing coverage masks."""
+        if not self.available:
+            raise RuntimeError(self.reason or "runtime unavailable")
+        base = np.ascontiguousarray(np.asarray(base))
+        warped = np.ascontiguousarray(np.asarray(warped))
+        mask1 = np.ascontiguousarray(np.asarray(mask1))
+        mask2 = np.ascontiguousarray(np.asarray(mask2))
+        if base.dtype != np.uint8 or warped.dtype != np.uint8 or base.ndim != 3 or base.shape[2] != 3:
+            raise ValueError("linear blend requires uint8 BGR images")
+        if warped.shape != base.shape or mask1.shape != base.shape[:2] or mask2.shape != base.shape[:2]:
+            raise ValueError("linear blend input shapes do not match")
+
+        output = np.empty_like(base)
+        buffers = [
+            self._create_buffer(int(base.nbytes), CL_MEM_READ_ONLY),
+            self._create_buffer(int(warped.nbytes), CL_MEM_READ_ONLY),
+            self._create_buffer(int(mask1.nbytes), CL_MEM_READ_ONLY),
+            self._create_buffer(int(mask2.nbytes), CL_MEM_READ_ONLY),
+            self._create_buffer(int(output.nbytes), CL_MEM_WRITE_ONLY),
+        ]
+        try:
+            for buffer, image, label in zip(buffers[:4], (base, warped, mask1, mask2), ("base", "warped", "mask1", "mask2")):
+                self._write_buffer(buffer, image, label)
+            kernel = self.kernels["linear_blend_bgr"]
+            for index, buffer in enumerate(buffers):
+                self._set_kernel_arg(index, self.cl_mem(buffer), kernel=kernel)
+            pixels = int(mask1.size)
+            self._set_kernel_arg(5, self.cl_int(pixels), kernel=kernel)
+            global_size = (self.size_t * 1)(pixels)
+            rc = self.lib.clEnqueueNDRangeKernel(self.queue, kernel, self.cl_uint(1), None, global_size, None, 0, None, None)
+            if rc != CL_SUCCESS:
+                raise RuntimeError(f"clEnqueueNDRangeKernel(linear_blend) rc={int(rc)}")
+            if self.lib.clFinish(self.queue) != CL_SUCCESS:
+                raise RuntimeError("clFinish(linear_blend) failed")
+            self._read_buffer(buffers[4], output)
+            return output
+        finally:
+            for buffer in buffers:
+                if buffer:
+                    self.lib.clReleaseMemObject(buffer)
+
+    def unsharp(self, image: Any):
+        """Apply the stitch postprocess sharpen kernel on the OpenCL device."""
+        if not self.available:
+            raise RuntimeError(self.reason or "runtime unavailable")
+        src = np.ascontiguousarray(np.asarray(image))
+        if src.dtype != np.uint8 or src.ndim != 3 or src.shape[2] != 3:
+            raise ValueError("unsharp requires a uint8 BGR image")
+        height, width = src.shape[:2]
+        output = np.empty_like(src)
+        buffers = [
+            self._create_buffer(int(src.nbytes), CL_MEM_READ_ONLY),
+            self._create_buffer(int(output.nbytes), CL_MEM_WRITE_ONLY),
+        ]
+        try:
+            self._write_buffer(buffers[0], src, "unsharp")
+            kernel = self.kernels["unsharp_bgr"]
+            self._set_kernel_arg(0, self.cl_mem(buffers[0]), kernel=kernel)
+            self._set_kernel_arg(1, self.cl_int(width), kernel=kernel)
+            self._set_kernel_arg(2, self.cl_int(height), kernel=kernel)
+            self._set_kernel_arg(3, self.cl_int(src.strides[0]), kernel=kernel)
+            self._set_kernel_arg(4, self.cl_mem(buffers[1]), kernel=kernel)
+            self._set_kernel_arg(5, self.cl_int(output.strides[0]), kernel=kernel)
+            global_size = (self.size_t * 2)(width, height)
+            rc = self.lib.clEnqueueNDRangeKernel(self.queue, kernel, self.cl_uint(2), None, global_size, None, 0, None, None)
+            if rc != CL_SUCCESS:
+                raise RuntimeError(f"clEnqueueNDRangeKernel(unsharp) rc={int(rc)}")
+            if self.lib.clFinish(self.queue) != CL_SUCCESS:
+                raise RuntimeError("clFinish(unsharp) failed")
+            self._read_buffer(buffers[1], output)
+            return output
+        finally:
+            for buffer in buffers:
+                if buffer:
+                    self.lib.clReleaseMemObject(buffer)
 
     def warp_perspective(self, image: Any, matrix: Any, dsize: Tuple[int, int], **kwargs: Any):
         if not self.available:
@@ -484,8 +667,13 @@ class DirectOpenCLRuntime:
         }
 
     def close(self) -> None:
+        for kernel in getattr(self, "kernels", {}).values():
+            try:
+                self.lib.clReleaseKernel(kernel)
+            except Exception:
+                pass
+        self.kernels = {}
         for attr, release in (
-            ("kernel", getattr(self.lib, "clReleaseKernel", None) if self.lib else None),
             ("program", getattr(self.lib, "clReleaseProgram", None) if self.lib else None),
             ("queue", getattr(self.lib, "clReleaseCommandQueue", None) if self.lib else None),
             ("context", getattr(self.lib, "clReleaseContext", None) if self.lib else None),

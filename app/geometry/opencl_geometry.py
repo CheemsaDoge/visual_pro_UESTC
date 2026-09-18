@@ -25,6 +25,8 @@ class OpenCLGeometryEngine(GeometryEngine):
         self.active_calls = 0
         self.fallback_calls = 0
         self.remap_fallback_calls = 0
+        self.stitch_gpu_calls = {"linear_blend": 0, "unsharp": 0}
+        self.stitch_gpu_fallbacks = {"linear_blend": 0, "unsharp": 0}
         runtime_status = self.runtime.status()
         self.platform_name = runtime_status.get("platform_name", "")
         self.device_name = runtime_status.get("device_name", "")
@@ -62,6 +64,36 @@ class OpenCLGeometryEngine(GeometryEngine):
             log_event("geometry", "opencl remap fallback reason=direct OpenCL remap is not implemented yet")
         return self.fallback.remap(image, map1, map2, **kwargs)
 
+    def linear_blend(self, base: Any, warped: Any, mask1: Any, mask2: Any) -> Any:
+        if not self.runtime_available:
+            self.stitch_gpu_fallbacks["linear_blend"] += 1
+            raise RuntimeError(self.reason or "direct OpenCL runtime unavailable")
+        try:
+            output = self.runtime.linear_blend(base, warped, mask1, mask2)
+            self.stitch_gpu_calls["linear_blend"] += 1
+            self.last_error = ""
+            return output
+        except Exception as exc:
+            self.stitch_gpu_fallbacks["linear_blend"] += 1
+            self.last_error = str(exc)
+            log_event("geometry", f"opencl linear blend fallback reason={self.last_error}")
+            raise
+
+    def unsharp(self, image: Any) -> Any:
+        if not self.runtime_available:
+            self.stitch_gpu_fallbacks["unsharp"] += 1
+            raise RuntimeError(self.reason or "direct OpenCL runtime unavailable")
+        try:
+            output = self.runtime.unsharp(image)
+            self.stitch_gpu_calls["unsharp"] += 1
+            self.last_error = ""
+            return output
+        except Exception as exc:
+            self.stitch_gpu_fallbacks["unsharp"] += 1
+            self.last_error = str(exc)
+            log_event("geometry", f"opencl unsharp fallback reason={self.last_error}")
+            raise
+
     def status(self) -> Dict[str, Any]:
         return {
             "requested": self.requested_name,
@@ -75,6 +107,8 @@ class OpenCLGeometryEngine(GeometryEngine):
             "active_calls": self.active_calls,
             "fallback_calls": self.fallback_calls,
             "remap_fallback_calls": self.remap_fallback_calls,
+            "stitch_gpu_calls": dict(self.stitch_gpu_calls),
+            "stitch_gpu_fallbacks": dict(self.stitch_gpu_fallbacks),
             "last_error": self.last_error,
             "runtime": self.runtime.status(),
             "fallback_engine": self.fallback.status(),

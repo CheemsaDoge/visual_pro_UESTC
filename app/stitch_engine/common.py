@@ -90,22 +90,36 @@ def postprocess_image(
     cv2,
     sharpen_strength: float = DEFAULT_SHARPEN_STRENGTH,
     denoise_h: int = DEFAULT_DENOISE_H,
+    geometry_engine=None,
     telemetry: dict | None = None,
 ):
     if image is None or getattr(image, "size", 0) == 0:
         return image
     pixels = int(image.shape[0] * image.shape[1])
     apply_denoise = denoise_h > 0 and pixels <= config.MAX_STITCH_DENOISE_PIXELS
-    if telemetry is not None:
-        telemetry.update(
-            {
-                "pixels": pixels,
-                "denoise": "fast_nl_means" if apply_denoise else "skipped_for_size",
-                "denoise_max_pixels": config.MAX_STITCH_DENOISE_PIXELS,
-            }
-        )
+    metadata = {
+        "pixels": pixels,
+        "denoise": "fast_nl_means" if apply_denoise else "skipped_for_size",
+        "denoise_max_pixels": config.MAX_STITCH_DENOISE_PIXELS,
+        "sharpen": "cpu",
+    }
+    gpu_unsharp = getattr(geometry_engine, "unsharp", None)
+    if callable(gpu_unsharp):
+        try:
+            sharpened = gpu_unsharp(image)
+            metadata["sharpen"] = "opencl"
+            if telemetry is not None:
+                telemetry.update(metadata)
+            if not apply_denoise:
+                return sharpened
+            return cv2.fastNlMeansDenoisingColored(sharpened, None, denoise_h, denoise_h, 7, 21)
+        except Exception as exc:
+            metadata["sharpen"] = "cpu_fallback"
+            metadata["gpu_fallback_reason"] = str(exc)
     blurred = cv2.GaussianBlur(image, (0, 0), 2.0)
     sharpened = cv2.addWeighted(image, 1.0 + sharpen_strength, blurred, -sharpen_strength, 0)
+    if telemetry is not None:
+        telemetry.update(metadata)
     if not apply_denoise:
         return sharpened
     return cv2.fastNlMeansDenoisingColored(sharpened, None, denoise_h, denoise_h, 7, 21)
@@ -185,7 +199,7 @@ def get_canvas_plan(canvas_w: int, canvas_h: int, w1: int, h1: int, w2: int, h2:
     return True, "", canvas_pixels <= config.MULTIBAND_MAX_STITCH_CANVAS_PIXELS, canvas_pixels
 
 
-def _blend_warped_pair(base_canvas, warped_image, mask1, mask2, cv2, *, use_multiband: bool):
+def _blend_warped_pair(base_canvas, warped_image, mask1, mask2, cv2, geometry_engine, *, use_multiband: bool):
     import numpy as np
 
     if use_multiband and hasattr(cv2, "detail_MultiBandBlender"):
@@ -198,7 +212,14 @@ def _blend_warped_pair(base_canvas, warped_image, mask1, mask2, cv2, *, use_mult
             blended = np.zeros_like(base_canvas, dtype=np.int16)
             blended_mask = np.zeros(mask1.shape, dtype=np.uint8)
             blender.blend(blended, blended_mask)
-            return np.clip(blended, 0, 255).astype(np.uint8)
+            return np.clip(blended, 0, 255).astype(np.uint8), "multiband_cpu"
+        except Exception:
+            pass
+
+    gpu_blend = getattr(geometry_engine, "linear_blend", None)
+    if callable(gpu_blend):
+        try:
+            return gpu_blend(base_canvas, warped_image, mask1, mask2), "linear_opencl"
         except Exception:
             pass
 
@@ -214,7 +235,7 @@ def _blend_warped_pair(base_canvas, warped_image, mask1, mask2, cv2, *, use_mult
             + warped_image[overlap_mask].astype(np.uint16)
         ) // 2
         result[overlap_mask] = merged.astype(np.uint8)
-    return result
+    return result, "linear_cpu"
 
 
 def stitch_two_images_with_orb(
@@ -335,14 +356,16 @@ def stitch_two_images_with_orb(
         (canvas_w, canvas_h),
     )
 
-    result = _blend_warped_pair(
+    result, blend_backend = _blend_warped_pair(
         base_canvas,
         warped_img2,
         mask1,
         mask2,
         cv2,
+        geometry_engine,
         use_multiband=use_multiband,
     )
+    telemetry["canvas"]["blend"] = blend_backend
     if auto_crop:
         result = crop_nonzero_area(result, cv2)
         if result is None or getattr(result, "size", 0) == 0:
