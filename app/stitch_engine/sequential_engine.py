@@ -60,7 +60,11 @@ class SequentialPanoEngine(StitchEngine):
             current = result
         if auto_crop:
             current = crop_nonzero_area(current, cv2)
-        return True, postprocess_image(current, cv2)
+        postprocess_detail = {}
+        postprocess_started = time.perf_counter()
+        current = postprocess_image(current, cv2, telemetry=postprocess_detail)
+        self._record_stage("postprocess", postprocess_started, **postprocess_detail)
+        return True, current
 
     def stitch(self, image_paths: List[str], output_path: str, auto_crop: bool = False) -> Tuple[bool, str]:
         detail = self._begin_run_detail(image_paths, auto_crop)

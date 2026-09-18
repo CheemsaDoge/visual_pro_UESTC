@@ -9,7 +9,7 @@ import numpy as np
 from app.stitch_engine.opencv_engine import OpenCVStitchEngine
 from app.stitch_engine.scans_engine import ScansStitchEngine
 from app.stitch_engine.sequential_engine import SequentialPanoEngine
-from app.stitch_engine.common import get_canvas_plan
+from app.stitch_engine.common import get_canvas_plan, postprocess_image
 
 
 def create_overlap_pair(tmpdir):
@@ -51,6 +51,27 @@ def create_overlap_triplet(tmpdir):
 
 
 class OpenCVStitchEngineTest(unittest.TestCase):
+    def test_large_postprocess_skips_expensive_denoise(self):
+        class FastCv:
+            @staticmethod
+            def GaussianBlur(image, kernel, sigma):
+                return image
+
+            @staticmethod
+            def addWeighted(image, alpha, blurred, beta, gamma):
+                return image
+
+            @staticmethod
+            def fastNlMeansDenoisingColored(*args):
+                raise AssertionError("denoise must not run on an oversized result")
+
+        telemetry = {}
+        with mock.patch("app.stitch_engine.common.config.MAX_STITCH_DENOISE_PIXELS", 10):
+            image = np.zeros((4, 4, 3), dtype=np.uint8)
+            result = postprocess_image(image, FastCv(), telemetry=telemetry)
+        self.assertIs(result, image)
+        self.assertEqual(telemetry["denoise"], "skipped_for_size")
+
     def test_canvas_plan_rejects_oversized_warp_before_allocation(self):
         ok, message, use_multiband, pixels = get_canvas_plan(8000, 2000, 1920, 1080, 1920, 1080)
         self.assertFalse(ok)

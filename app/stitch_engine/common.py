@@ -90,11 +90,24 @@ def postprocess_image(
     cv2,
     sharpen_strength: float = DEFAULT_SHARPEN_STRENGTH,
     denoise_h: int = DEFAULT_DENOISE_H,
+    telemetry: dict | None = None,
 ):
     if image is None or getattr(image, "size", 0) == 0:
         return image
+    pixels = int(image.shape[0] * image.shape[1])
+    apply_denoise = denoise_h > 0 and pixels <= config.MAX_STITCH_DENOISE_PIXELS
+    if telemetry is not None:
+        telemetry.update(
+            {
+                "pixels": pixels,
+                "denoise": "fast_nl_means" if apply_denoise else "skipped_for_size",
+                "denoise_max_pixels": config.MAX_STITCH_DENOISE_PIXELS,
+            }
+        )
     blurred = cv2.GaussianBlur(image, (0, 0), 2.0)
     sharpened = cv2.addWeighted(image, 1.0 + sharpen_strength, blurred, -sharpen_strength, 0)
+    if not apply_denoise:
+        return sharpened
     return cv2.fastNlMeansDenoisingColored(sharpened, None, denoise_h, denoise_h, 7, 21)
 
 

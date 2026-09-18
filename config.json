@@ -20,6 +20,7 @@
     "max_image_bytes": 15728640,
     "max_canvas_pixels": 8000000,
     "multiband_max_canvas_pixels": 3000000,
+    "postprocess_denoise_max_pixels": 1500000,
     "viewer": {
       "haov": 360,
       "vaov": 60,
