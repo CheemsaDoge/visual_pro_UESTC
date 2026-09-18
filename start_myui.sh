@@ -110,7 +110,13 @@ fi
 if ps -ef | grep "$BASE_DIR/backend.py" | grep -v grep >/dev/null 2>&1; then
   :
 else
-  nohup "$PYTHON_BIN" "$BASE_DIR/backend.py" >>"$LOG_FILE" 2>&1 </dev/null &
+  # The serial console uses Ctrl-C to recover a shell.  Put the backend in a
+  # separate session so that recovery cannot interrupt the HTTP service.
+  if command -v setsid >/dev/null 2>&1; then
+    nohup setsid "$PYTHON_BIN" "$BASE_DIR/backend.py" >>"$LOG_FILE" 2>&1 </dev/null &
+  else
+    nohup "$PYTHON_BIN" "$BASE_DIR/backend.py" >>"$LOG_FILE" 2>&1 </dev/null &
+  fi
   echo "$!" > "$PID_FILE"
   sleep 1
 fi
